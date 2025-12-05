@@ -1,6 +1,146 @@
-# Getting Started with Create React App
+# F1 Analytics & Prediction Platform
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A comprehensive full-stack Formula 1 analytics and prediction web application featuring real-time telemetry analysis, machine learning-powered race predictions, and interactive data visualizations.
+
+## 🏎️ Features
+
+### Core Analytics
+- **Lap Time Analysis**: Compare lap times between drivers, visualize pace across stints, analyze consistency
+- **Telemetry Comparison**: Overlay speed, throttle, brake, and gear data for any two drivers
+- **Strategy Analysis**: Pit stop timing, tire degradation tracking, stint performance comparison
+- **Race Predictions**: ML-powered predictions for race winners, podium finishers, and fastest laps
+- **Driver Performance**: Historical trends, season statistics, and career progression
+- **Circuit Analysis**: Track-specific statistics, historical data, and weather impact
+- **Head-to-Head**: Direct driver comparisons with detailed performance metrics
+
+### Technology Stack
+
+**Backend:**
+- Python 3.9+
+- FastAPI for RESTful API
+- FastF1 library for F1 data
+- scikit-learn for machine learning
+- pandas/numpy for data processing
+
+**Frontend:**
+- React 19 with Hooks
+- React Router for navigation
+- Axios for API calls
+- Recharts for data visualization
+- Tailwind CSS for styling
+
+## 🚀 Quick Start
+
+### Backend Setup
+
+1. **Navigate to backend directory:**
+   ```bash
+   cd backend
+   ```
+
+2. **Create virtual environment:**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configure environment:**
+   ```bash
+   cp .env.example .env
+   ```
+
+5. **Run the backend:**
+   ```bash
+   python app/main.py
+   ```
+
+   The API will be available at `http://localhost:8000`
+   API documentation at `http://localhost:8000/api/v1/docs`
+
+### Frontend Setup
+
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Create environment file:**
+   ```bash
+   echo "REACT_APP_API_URL=http://localhost:8000/api/v1" > .env
+   ```
+
+3. **Run development server:**
+   ```bash
+   npm start
+   ```
+
+   The application will open at `http://localhost:3000`
+
+## 📊 API Endpoints
+
+### Sessions
+- `GET /api/v1/sessions/schedule/{year}` - Get race schedule
+- `GET /api/v1/sessions/{year}/{grand_prix}/{session_name}` - Get session info
+
+### Lap Times
+- `GET /api/v1/laptimes/{year}/{grand_prix}/{session_name}` - Get lap times
+- `GET /api/v1/laptimes/{year}/{grand_prix}/{session_name}/analysis` - Lap time analysis
+
+### Telemetry
+- `GET /api/v1/telemetry/{year}/{grand_prix}/{session_name}/compare` - Compare two drivers
+
+### Predictions
+- `POST /api/v1/predictions/race` - Predict race outcome
+- `GET /api/v1/predictions/championship/{year}` - Predict championship
+
+### Drivers & More
+See full API documentation at `http://localhost:8000/api/v1/docs`
+
+## 🤖 Machine Learning
+
+The platform uses RandomForest and GradientBoosting models for predictions based on:
+- Qualifying positions
+- Historical race results
+- Driver performance statistics
+- Team performance trends
+
+## 📝 Usage Example
+
+```javascript
+import { getLapTimes, predictRace } from './services/api';
+
+// Get lap times
+const laps = await getLapTimes(2024, 'Monaco', 'Race', 'VER');
+
+// Make prediction
+const prediction = await predictRace(2024, 'Monaco');
+console.log(prediction.race_winner);
+```
+
+## 🐛 Troubleshooting
+
+- **Slow first request**: FastF1 caches data on first load
+- **CORS errors**: Check backend CORS_ORIGINS setting
+- **Import errors**: Ensure all Python dependencies are installed
+
+## 📄 License
+
+MIT License - Free to use for personal or commercial purposes.
+
+## 🙏 Acknowledgments
+
+- FastF1 library for F1 data access
+- Formula 1 for the amazing sport
+- React and FastAPI communities
+
+---
+
+**Built with ❤️ for F1 fans and data enthusiasts**
 
 ## Available Scripts
 
