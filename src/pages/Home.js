@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { getSeasonSchedule, getDriverStandings } from '../services/api';
+import { getSeasonSchedule } from '../services/api';
 
 function Home() {
   const [currentYear] = useState(2024);
   const [schedule, setSchedule] = useState([]);
-  const [standings, setStandings] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -14,13 +13,9 @@ function Home() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [scheduleData, standingsData] = await Promise.all([
-        getSeasonSchedule(currentYear),
-        getDriverStandings(currentYear)
-      ]);
-      
+      // Only load schedule, skip standings to speed up
+      const scheduleData = await getSeasonSchedule(currentYear);
       setSchedule(scheduleData.events || []);
-      setStandings(standingsData.standings || []);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -86,27 +81,25 @@ function Home() {
         {/* Current Standings */}
         <div className="bg-f1-gray rounded-lg p-6">
           <h2 className="text-2xl font-bold mb-4 text-f1-red">
-            Driver Standings {currentYear}
+            Quick Links
           </h2>
-          <div className="overflow-auto max-h-96">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-600">
-                  <th className="text-left py-2">Pos</th>
-                  <th className="text-left py-2">Driver</th>
-                  <th className="text-right py-2">Points</th>
-                </tr>
-              </thead>
-              <tbody>
-                {standings.slice(0, 10).map((driver, index) => (
-                  <tr key={index} className="border-b border-gray-700">
-                    <td className="py-2 font-bold">{index + 1}</td>
-                    <td className="py-2">{driver.driver || driver.full_name}</td>
-                    <td className="py-2 text-right">{driver.points}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-3">
+            <a href="/drivers" className="block bg-f1-dark hover:bg-gray-700 rounded p-4 transition">
+              <h3 className="font-bold text-lg mb-1">Driver Analysis</h3>
+              <p className="text-sm text-gray-400">Detailed driver performance metrics and comparisons</p>
+            </a>
+            <a href="/predictions" className="block bg-f1-dark hover:bg-gray-700 rounded p-4 transition">
+              <h3 className="font-bold text-lg mb-1">AI Race Predictions</h3>
+              <p className="text-sm text-gray-400">ML-powered predictions for upcoming races</p>
+            </a>
+            <a href="/telemetry" className="block bg-f1-dark hover:bg-gray-700 rounded p-4 transition">
+              <h3 className="font-bold text-lg mb-1">Telemetry Comparison</h3>
+              <p className="text-sm text-gray-400">Compare driver telemetry data side-by-side</p>
+            </a>
+            <a href="/laptimes" className="block bg-f1-dark hover:bg-gray-700 rounded p-4 transition">
+              <h3 className="font-bold text-lg mb-1">Lap Time Analysis</h3>
+              <p className="text-sm text-gray-400">Analyze lap times and session performance</p>
+            </a>
           </div>
         </div>
       </div>
@@ -119,11 +112,11 @@ function Home() {
         <div className="grid md:grid-cols-3 gap-4">
           {schedule.slice(0, 6).map((race, index) => (
             <div key={index} className="bg-f1-dark rounded p-4">
-              <div className="text-sm text-gray-400">Round {race.round}</div>
-              <div className="font-bold text-lg">{race.grand_prix}</div>
-              <div className="text-gray-300">{race.location}, {race.country}</div>
+              <div className="text-sm text-gray-400">Round {race.RoundNumber}</div>
+              <div className="font-bold text-lg">{race.EventName}</div>
+              <div className="text-gray-300">{race.Location}, {race.Country}</div>
               <div className="text-sm text-gray-400 mt-2">
-                {race.date ? new Date(race.date).toLocaleDateString() : 'TBD'}
+                {race.EventDate}
               </div>
             </div>
           ))}

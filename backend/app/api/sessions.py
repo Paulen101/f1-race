@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from app.services import f1_service
 import fastf1
+import pandas as pd
 
 router = APIRouter()
 

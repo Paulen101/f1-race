@@ -59,6 +59,7 @@ class PredictionRequest(BaseModel):
     year: int
     grand_prix: str
     include_weather: bool = False
+    quick_mode: bool = False
 
 
 class PredictionResponse(BaseModel):

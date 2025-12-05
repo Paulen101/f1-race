@@ -80,11 +80,39 @@ export const getTireDegradation = async (year, grandPrix, driver) => {
 };
 
 // Predictions API
+export const getAvailableYears = async () => {
+  const response = await api.get('/predictions/years');
+  return response.data;
+};
+
+export const getAvailableTracks = async (year) => {
+  const response = await api.get(`/predictions/tracks/${year}`);
+  return response.data;
+};
+
+export const getAvailableDrivers = async (year) => {
+  const response = await api.get(`/predictions/drivers/${year}`);
+  return response.data;
+};
+
+export const getNextRace = async (year) => {
+  const response = await api.get(`/predictions/next-race/${year}`);
+  return response.data;
+};
+
 export const predictRace = async (year, grandPrix, includeWeather = false) => {
   const response = await api.post('/predictions/race', {
     year,
     grand_prix: grandPrix,
     include_weather: includeWeather
+  });
+  return response.data;
+};
+
+export const predictRaceQuick = async (year, grandPrix) => {
+  const response = await api.post('/predictions/race/quick', {
+    year,
+    grand_prix: grandPrix
   });
   return response.data;
 };

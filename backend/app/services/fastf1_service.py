@@ -13,16 +13,20 @@ class FastF1Service:
         """Initialize FastF1 service with cache"""
         fastf1.Cache.enable_cache(settings.FASTF1_CACHE_DIR)
     
-    async def get_session(self, year: int, grand_prix: str, session_name: str):
-        """Get a specific session"""
+    async def get_session(self, year: int, grand_prix: str, session_name: str, load_laps: bool = True, load_telemetry: bool = False):
+        """Get a specific session - optimized to only load what's needed"""
         try:
+            print(f"Loading session: {year} {grand_prix} {session_name}")
             session = fastf1.get_session(year, grand_prix, session_name)
-            session.load()
+            # Only load what we need - MUCH faster!
+            session.load(laps=load_laps, telemetry=load_telemetry, weather=False, messages=False)
+            print(f"Session loaded successfully")
             return session
         except Exception as e:
+            print(f"Error loading session: {type(e).__name__}: {str(e)}")
             raise HTTPException(
                 status_code=404,
-                detail=f"Session not found: {str(e)}"
+                detail=f"Session not found for {year} {grand_prix} {session_name}: {str(e)}"
             )
     
     async def get_laps(self, year: int, grand_prix: str, session_name: str, driver: Optional[str] = None):
@@ -46,7 +50,8 @@ class FastF1Service:
                            driver: str, lap_number: Optional[int] = None):
         """Get telemetry data for a driver"""
         try:
-            session = await self.get_session(year, grand_prix, session_name)
+            # For telemetry we NEED to load it
+            session = await self.get_session(year, grand_prix, session_name, load_laps=True, load_telemetry=True)
             driver_laps = session.laps.pick_driver(driver)
             
             if lap_number:
@@ -63,7 +68,7 @@ class FastF1Service:
             )
     
     async def get_driver_standings(self, year: int):
-        """Get driver standings for a season"""
+        """Get driver standings for a season - optimized version"""
         try:
             # Get all race results for the year
             schedule = fastf1.get_event_schedule(year)
@@ -74,11 +79,18 @@ class FastF1Service:
             for _, event in completed_races.iterrows():
                 try:
                     race = fastf1.get_session(year, event['EventName'], 'Race')
-                    race.load()
+                    # OPTIMIZATION: Only load results, skip telemetry/weather/messages
+                    race.load(laps=False, telemetry=False, weather=False, messages=False)
                     results = race.results
                     
+                    if results is None or results.empty:
+                        continue
+                    
                     for _, result in results.iterrows():
-                        driver = result['Abbreviation']
+                        driver = result.get('Abbreviation', '')
+                        if not driver:
+                            continue
+                            
                         points = result.get('Points', 0)
                         
                         if driver not in driver_points:
@@ -97,7 +109,8 @@ class FastF1Service:
                             driver_points[driver]['wins'] += 1
                         if result.get('Position') <= 3:
                             driver_points[driver]['podiums'] += 1
-                except:
+                except Exception as e:
+                    print(f"Error loading race {event.get('EventName', 'Unknown')}: {str(e)}")
                     continue
             
             # Sort by points
