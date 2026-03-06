@@ -2,92 +2,115 @@
 from fastapi import APIRouter, HTTPException
 from typing import Optional
 from app.services import f1_service
+from app.utils.telemetry_optimizer import (
+    optimize_telemetry_data,
+    align_telemetry_by_distance,
+    calculate_telemetry_delta
+)
 import pandas as pd
 
 router = APIRouter()
 
 
 @router.get("/{year}/{grand_prix}/{session_name}/{driver}")
-async def get_driver_telemetry(
+def get_driver_telemetry(
     year: int,
     grand_prix: str,
     session_name: str,
     driver: str,
-    lap_number: Optional[int] = None
+    lap_number: Optional[int] = None,
+    downsample: int = 10
 ):
-    """Get telemetry data for a specific driver's lap"""
+    """
+    Get optimized telemetry data for a specific driver's lap.
+    
+    NOTE: This endpoint uses standard 'def' instead of 'async def' because FastF1
+    operations are blocking/CPU-intensive. FastAPI automatically runs these in a
+    thread pool to prevent blocking the event loop.
+    
+    Args:
+        downsample: Downsample factor (keep every Nth point). Default: 10
+                   Higher = smaller payload, Lower = more detail
+    """
     try:
-        telemetry = await f1_service.get_telemetry(year, grand_prix, session_name, driver, lap_number)
+        # FastF1 operations are blocking - FastAPI will run this in thread pool
+        telemetry = f1_service.get_telemetry_sync(year, grand_prix, session_name, driver, lap_number)
         
-        # Sample telemetry data (every 10th point to reduce payload)
-        sampled = telemetry.iloc[::10]
-        
-        data = []
-        for _, point in sampled.iterrows():
-            data.append({
-                'distance': float(point['Distance']) if pd.notna(point.get('Distance')) else None,
-                'time': float(point['Time'].total_seconds()) if pd.notna(point.get('Time')) else None,
-                'speed': float(point['Speed']) if pd.notna(point.get('Speed')) else None,
-                'throttle': float(point['Throttle']) if pd.notna(point.get('Throttle')) else None,
-                'brake': float(point['Brake']) if pd.notna(point.get('Brake')) else None,
-                'gear': int(point['nGear']) if pd.notna(point.get('nGear')) else None,
-                'rpm': float(point['RPM']) if pd.notna(point.get('RPM')) else None,
-                'drs': int(point['DRS']) if pd.notna(point.get('DRS')) else None
-            })
-        
-        return {'driver': driver, 'telemetry': data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{year}/{grand_prix}/{session_name}/compare")
-async def compare_telemetry(
-    year: int,
-    grand_prix: str,
-    session_name: str,
-    driver1: str,
-    driver2: str,
-    lap_number: Optional[int] = None
-):
-    """Compare telemetry between two drivers"""
-    try:
-        comparison = await f1_service.compare_lap_telemetry(
-            year, grand_prix, session_name, driver1, driver2, lap_number
+        # Use optimized telemetry function (80-90% size reduction)
+        data = optimize_telemetry_data(
+            telemetry,
+            downsample_factor=downsample,
+            decimal_places=2,
+            align_by_distance=True
         )
         
-        # Sample both telemetry datasets
-        tel1 = pd.DataFrame(comparison['driver1']['telemetry'])
-        tel2 = pd.DataFrame(comparison['driver2']['telemetry'])
-        
-        sampled1 = tel1.iloc[::10].to_dict('records') if len(tel1) > 0 else []
-        sampled2 = tel2.iloc[::10].to_dict('records') if len(tel2) > 0 else []
-        
-        # Calculate delta analysis
-        delta_analysis = _calculate_telemetry_delta(tel1, tel2)
-        
         return {
-            'driver1': {
-                'driver': driver1,
-                'telemetry': sampled1
-            },
-            'driver2': {
-                'driver': driver2,
-                'telemetry': sampled2
-            },
-            'delta_analysis': delta_analysis
+            'driver': driver,
+            'telemetry': data,
+            'data_points': len(data),
+            'original_points': len(telemetry)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _calculate_telemetry_delta(tel1, tel2):
-    """Calculate key differences between two telemetry datasets"""
-    if len(tel1) == 0 or len(tel2) == 0:
-        return {}
+@router.get("/{year}/{grand_prix}/{session_name}/compare")
+def compare_telemetry(
+    year: int,
+    grand_prix: str,
+    session_name: str,
+    driver1: str,
+    driver2: str,
+    lap_number: Optional[int] = None,
+    downsample: int = 10,
+    align_by_distance: bool = True
+):
+    """
+    Compare telemetry between two drivers with distance-aligned data.
     
-    return {
-        'max_speed_diff': float(tel1['Speed'].max() - tel2['Speed'].max()) if 'Speed' in tel1.columns else None,
-        'avg_speed_diff': float(tel1['Speed'].mean() - tel2['Speed'].mean()) if 'Speed' in tel1.columns else None,
-        'throttle_usage_diff': float(tel1['Throttle'].mean() - tel2['Throttle'].mean()) if 'Throttle' in tel1.columns else None,
-        'brake_usage_diff': float(tel1['Brake'].mean() - tel2['Brake'].mean()) if 'Brake' in tel1.columns else None
-    }
+    This endpoint ensures both drivers' telemetry is aligned by track distance
+    (not time), allowing accurate geographical comparison of cornering speeds,
+    throttle application, etc. at the same track positions.
+    
+    Args:
+        align_by_distance: If True, aligns telemetry by distance for accurate comparison
+        downsample: Downsample factor after alignment
+    """
+    try:
+        # Get raw telemetry (blocking operation - runs in thread pool)
+        tel1 = f1_service.get_telemetry_sync(year, grand_prix, session_name, driver1, lap_number)
+        tel2 = f1_service.get_telemetry_sync(year, grand_prix, session_name, driver2, lap_number)
+        
+        # Align by distance for geographical accuracy
+        if align_by_distance:
+            tel1_aligned, tel2_aligned = align_telemetry_by_distance(
+                tel1, tel2, distance_step=10.0
+            )
+        else:
+            tel1_aligned, tel2_aligned = tel1, tel2
+        
+        # Optimize both datasets
+        data1 = optimize_telemetry_data(tel1_aligned, downsample_factor=downsample)
+        data2 = optimize_telemetry_data(tel2_aligned, downsample_factor=downsample)
+        
+        # Calculate delta analysis using aligned data
+        delta_analysis = calculate_telemetry_delta(tel1, tel2, align=True)
+        
+        return {
+            'driver1': {
+                'driver': driver1,
+                'telemetry': data1
+            },
+            'driver2': {
+                'driver': driver2,
+                'telemetry': data2
+            },
+            'delta_analysis': delta_analysis,
+            'aligned_by_distance': align_by_distance,
+            'data_points_per_driver': len(data1)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Removed: Using calculate_telemetry_delta from telemetry_optimizer module instead

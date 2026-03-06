@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import fastf1
 from app.config import settings
+from app.utils.cache_setup import setup_cache
 from app.api import (
     sessions,
     telemetry,
@@ -15,8 +16,8 @@ from app.api import (
     comparisons
 )
 
-# Enable FastF1 cache
-fastf1.Cache.enable_cache(settings.FASTF1_CACHE_DIR)
+# Enable FastF1 cache using utility function
+cache_path = setup_cache(settings.FASTF1_CACHE_DIR)
 
 app = FastAPI(
     title="F1 Analytics API",
@@ -60,6 +61,22 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+
+@app.get("/cache/info")
+def cache_info():
+    """
+    Get FastF1 cache information.
+    
+    NOTE: This endpoint uses standard 'def' for file system operations
+    which run in a thread pool.
+    """
+    from app.utils.cache_setup import get_cache_size
+    cache_stats = get_cache_size(settings.FASTF1_CACHE_DIR)
+    return {
+        "cache": cache_stats,
+        "note": "Cache dramatically speeds up repeated requests. First request may be slow."
+    }
 
 
 @app.exception_handler(Exception)

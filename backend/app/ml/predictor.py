@@ -7,6 +7,12 @@ import joblib
 import os
 from typing import Dict, List, Any
 from app.config import settings
+from app.ml.feature_engineering import (
+    calculate_rolling_form,
+    calculate_average_pit_stop_duration,
+    calculate_track_specific_performance,
+    extract_enhanced_features
+)
 
 
 class RacePredictionModel:
@@ -19,8 +25,16 @@ class RacePredictionModel:
         self.scaler = StandardScaler()
         self.is_trained = False
     
-    def _extract_features(self, driver_data: pd.DataFrame, qualifying_results: pd.DataFrame) -> np.ndarray:
-        """Extract features for prediction"""
+    def _extract_features(self, driver_data: pd.DataFrame, qualifying_results: pd.DataFrame, 
+                         session=None, current_round: int = None) -> np.ndarray:
+        """
+        Extract enhanced features for prediction including:
+        - Qualifying position
+        - Historical performance metrics
+        - Rolling form (last 3 races average)
+        - Track-specific performance
+        - Average pit stop duration for the track
+        """
         features = []
         
         for _, driver in qualifying_results.iterrows():
@@ -29,14 +43,53 @@ class RacePredictionModel:
             # Historical performance features
             driver_history = driver_data[driver_data['Driver'] == driver_code]
             
+            # Basic features
+            quali_position = driver.get('Position', 20)
+            races_completed = len(driver_history)
+            career_avg = driver_history['Position'].mean() if len(driver_history) > 0 else 15.0
+            total_points = driver_history['Points'].sum() if len(driver_history) > 0 else 0.0
+            wins = (driver_history['Position'] == 1).sum() if len(driver_history) > 0 else 0
+            podiums = (driver_history['Position'] <= 3).sum() if len(driver_history) > 0 else 0
+            
+            # Enhanced feature: Rolling form (last 3 races)
+            rolling_form = 15.0  # Default
+            if current_round and len(driver_history) > 0:
+                rolling_form = calculate_rolling_form(driver_history, current_round, window=3)
+            
+            # Enhanced feature: Track-specific performance
+            track_avg = 15.0  # Default
+            if session:
+                track_name = session.event.get('EventName', '')
+                year = session.event.get('EventDate').year if 'EventDate' in session.event else 2024
+                try:
+                    track_perf = calculate_track_specific_performance(
+                        driver_code, track_name, years=[year-2, year-1]
+                    )
+                    track_avg = track_perf['avg_position']
+                except Exception:
+                    pass
+            
+            # Enhanced feature: Average pit stop duration for this track
+            avg_pit_time = 23.0  # Default
+            if session:
+                track_name = session.event.get('EventName', '')
+                year = session.event.get('EventDate').year if 'EventDate' in session.event else 2024
+                try:
+                    avg_pit_time = calculate_average_pit_stop_duration(year, track_name)
+                except Exception:
+                    pass
+            
             feature_vector = [
-                driver.get('Position', 20),  # Qualifying position
-                len(driver_history),  # Number of races
-                driver_history['Position'].mean() if len(driver_history) > 0 else 15,  # Avg finish
-                driver_history['Points'].sum() if len(driver_history) > 0 else 0,  # Total points
-                (driver_history['Position'] == 1).sum() if len(driver_history) > 0 else 0,  # Wins
-                (driver_history['Position'] <= 3).sum() if len(driver_history) > 0 else 0,  # Podiums
-                driver_history['FastestLap'].sum() if len(driver_history) > 0 and 'FastestLap' in driver_history.columns else 0,  # Fastest laps
+                quali_position,           # Qualifying position
+                races_completed,          # Number of races
+                career_avg,               # Career avg finish
+                total_points,             # Total points
+                wins,                     # Wins
+                podiums,                  # Podiums
+                0,                        # Fastest laps (legacy)
+                rolling_form,             # NEW: Last 3 races avg
+                track_avg,                # NEW: Track-specific avg
+                avg_pit_time,             # NEW: Track pit stop avg
             ]
             
             features.append(feature_vector)

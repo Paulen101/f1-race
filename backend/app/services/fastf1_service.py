@@ -67,6 +67,41 @@ class FastF1Service:
                 detail=f"Error fetching telemetry: {str(e)}"
             )
     
+    def get_telemetry_sync(self, year: int, grand_prix: str, session_name: str, 
+                          driver: str, lap_number: Optional[int] = None):
+        """
+        Synchronous version of get_telemetry for FastAPI thread pool execution.
+        
+        FastF1 operations are blocking/CPU-intensive. By using standard 'def' instead
+        of 'async def', FastAPI automatically runs this in a thread pool, preventing
+        the event loop from blocking.
+        """
+        try:
+            print(f"Loading telemetry: {year} {grand_prix} {session_name} - {driver}")
+            session = fastf1.get_session(year, grand_prix, session_name)
+            # Load telemetry data
+            session.load(laps=True, telemetry=True, weather=False, messages=False)
+            
+            driver_laps = session.laps.pick_driver(driver)
+            
+            if driver_laps.empty:
+                raise ValueError(f"No laps found for driver {driver}")
+            
+            if lap_number:
+                lap = driver_laps[driver_laps['LapNumber'] == lap_number].iloc[0]
+            else:
+                lap = driver_laps.pick_fastest()
+            
+            telemetry = lap.get_telemetry()
+            print(f"Telemetry loaded: {len(telemetry)} data points")
+            return telemetry
+        except Exception as e:
+            print(f"Error loading telemetry: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error fetching telemetry: {str(e)}"
+            )
+    
     async def get_driver_standings(self, year: int):
         """Get driver standings for a season - optimized version"""
         try:
