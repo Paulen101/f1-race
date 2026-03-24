@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { compareTelemetry } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import { compareTelemetry, getAvailableYears, getAvailableTracks, getSessionInfo } from '../services/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 function TelemetryPage() {
@@ -10,6 +10,70 @@ function TelemetryPage() {
   const [driver2, setDriver2] = useState('');
   const [telemetryData, setTelemetryData] = useState(null);
   const [loading, setLoading] = useState(false);
+  
+  // Dropdown options
+  const [availableYears, setAvailableYears] = useState([]);
+  const [availableTracks, setAvailableTracks] = useState([]);
+  const [availableDrivers, setAvailableDrivers] = useState([]);
+  const [loadingDropdowns, setLoadingDropdowns] = useState(true);
+
+  // Load available years on mount
+  useEffect(() => {
+    const loadYears = async () => {
+      try {
+        const data = await getAvailableYears();
+        const years = data.years || [];
+        setAvailableYears(years);
+        if (years.length > 0 && !year) {
+          setYear(years[0]);
+        }
+      } catch (error) {
+        console.error('Error loading years:', error);
+        // Fallback to recent years if API fails
+        const fallbackYears = [2024, 2023, 2022, 2021, 2020];
+        setAvailableYears(fallbackYears);
+      }
+    };
+    loadYears();
+  }, [year]);
+
+  // Load available tracks when year changes
+  useEffect(() => {
+    const loadTracks = async () => {
+      if (!year) return;
+      try {
+        const data = await getAvailableTracks(year);
+        const tracks = (data.tracks || []).map(t => t.name);
+        setAvailableTracks(tracks);
+        // Auto-select first track if none selected or current selection not in list
+        if (tracks.length > 0 && (!grandPrix || !tracks.includes(grandPrix))) {
+          setGrandPrix(tracks[0]);
+        }
+      } catch (error) {
+        console.error('Error loading tracks:', error);
+        setAvailableTracks([]);
+      }
+    };
+    loadTracks();
+  }, [year, grandPrix]);
+
+  // Load available drivers when year/track/session changes
+  useEffect(() => {
+    const loadDrivers = async () => {
+      if (!year || !grandPrix || !sessionName) return;
+      try {
+        setLoadingDropdowns(true);
+        const sessionData = await getSessionInfo(year, grandPrix, sessionName);
+        setAvailableDrivers(sessionData.drivers || []);
+        setLoadingDropdowns(false);
+      } catch (error) {
+        console.error('Error loading drivers:', error);
+        setAvailableDrivers([]);
+        setLoadingDropdowns(false);
+      }
+    };
+    loadDrivers();
+  }, [year, grandPrix, sessionName]);
 
   const handleLoadTelemetry = async () => {
     if (!grandPrix || !driver1 || !driver2) {
@@ -68,23 +132,29 @@ function TelemetryPage() {
         <div className="grid md:grid-cols-3 gap-4 mb-4">
           <div>
             <label className="block text-sm mb-2">Year</label>
-            <input
-              type="number"
+            <select
               value={year}
               onChange={(e) => setYear(parseInt(e.target.value))}
               className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none"
-            />
+            >
+              {availableYears.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
           </div>
           
           <div>
             <label className="block text-sm mb-2">Grand Prix</label>
-            <input
-              type="text"
+            <select
               value={grandPrix}
               onChange={(e) => setGrandPrix(e.target.value)}
-              placeholder="e.g., Monaco"
               className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none"
-            />
+            >
+              <option value="">Select a track...</option>
+              {availableTracks.map(track => (
+                <option key={track} value={track}>{track}</option>
+              ))}
+            </select>
           </div>
           
           <div>
@@ -104,33 +174,41 @@ function TelemetryPage() {
         <div className="grid md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-sm mb-2">Driver 1</label>
-            <input
-              type="text"
+            <select
               value={driver1}
               onChange={(e) => setDriver1(e.target.value)}
-              placeholder="e.g., VER"
-              className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none"
-            />
+              disabled={loadingDropdowns}
+              className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none disabled:opacity-50"
+            >
+              <option value="">Select driver 1...</option>
+              {availableDrivers.map(driver => (
+                <option key={driver} value={driver}>{driver}</option>
+              ))}
+            </select>
           </div>
           
           <div>
             <label className="block text-sm mb-2">Driver 2</label>
-            <input
-              type="text"
+            <select
               value={driver2}
               onChange={(e) => setDriver2(e.target.value)}
-              placeholder="e.g., HAM"
-              className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none"
-            />
+              disabled={loadingDropdowns}
+              className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none disabled:opacity-50"
+            >
+              <option value="">Select driver 2...</option>
+              {availableDrivers.map(driver => (
+                <option key={driver} value={driver}>{driver}</option>
+              ))}
+            </select>
           </div>
         </div>
         
         <button
           onClick={handleLoadTelemetry}
-          disabled={loading}
+          disabled={loading || loadingDropdowns}
           className="bg-f1-red text-white px-6 py-2 rounded hover:bg-red-700 disabled:bg-gray-600 transition"
         >
-          {loading ? 'Loading...' : 'Compare Telemetry'}
+          {loading ? 'Loading Telemetry...' : loadingDropdowns ? 'Loading Options...' : 'Compare Telemetry'}
         </button>
       </div>
 

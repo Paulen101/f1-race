@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { FaBolt, FaChartLine, FaFlagCheckered, FaMedal, FaTrophy } from 'react-icons/fa';
 import { 
   predictRaceQuick,
   getAvailableYears, 
@@ -108,7 +109,10 @@ function PredictionsPage() {
 
         {nextRace && (
           <div className="bg-f1-dark border border-f1-red rounded-lg p-4 mb-6">
-            <h3 className="text-lg font-bold text-f1-red mb-2">🏁 Next Race</h3>
+            <h3 className="text-lg font-bold text-f1-red mb-2 flex items-center gap-2">
+              <FaFlagCheckered aria-hidden="true" />
+              <span>Next Race</span>
+            </h3>
             <p className="text-white font-semibold">{nextRace.grand_prix}</p>
             <p className="text-gray-400 text-sm">{nextRace.location}, {nextRace.country}</p>
             <p className="text-gray-400 text-sm">{formatDate(nextRace.date)}</p>
@@ -162,7 +166,10 @@ function PredictionsPage() {
           <div className="grid md:grid-cols-3 gap-6 mb-6">
             {/* Race Winner */}
             <div className="bg-f1-gray rounded-lg p-6">
-              <h2 className="text-xl font-bold mb-4 text-f1-red">🏆 Race Winner</h2>
+              <h2 className="text-xl font-bold mb-4 text-f1-red flex items-center gap-2">
+                <FaTrophy aria-hidden="true" />
+                <span>Race Winner</span>
+              </h2>
               <div className="space-y-2">
                 {getTopPredictions(predictions.race_winner).map(([driver, prob], idx) => (
                   <div key={driver} className="flex justify-between items-center py-2 border-b border-gray-700 last:border-0">
@@ -188,7 +195,10 @@ function PredictionsPage() {
 
             {/* Podium */}
             <div className="bg-f1-gray rounded-lg p-6">
-              <h2 className="text-xl font-bold mb-4 text-f1-red">🥇 Podium Finishers</h2>
+              <h2 className="text-xl font-bold mb-4 text-f1-red flex items-center gap-2">
+                <FaMedal aria-hidden="true" />
+                <span>Podium Finishers</span>
+              </h2>
               <div className="space-y-2">
                 {getTopPredictions(predictions.podium).map(([driver, prob], idx) => (
                   <div key={driver} className="flex justify-between items-center py-2 border-b border-gray-700 last:border-0">
@@ -214,7 +224,10 @@ function PredictionsPage() {
 
             {/* Fastest Lap */}
             <div className="bg-f1-gray rounded-lg p-6">
-              <h2 className="text-xl font-bold mb-4 text-f1-red">⚡ Fastest Lap</h2>
+              <h2 className="text-xl font-bold mb-4 text-f1-red flex items-center gap-2">
+                <FaBolt aria-hidden="true" />
+                <span>Fastest Lap</span>
+              </h2>
               <div className="space-y-2">
                 {getTopPredictions(predictions.fastest_lap).map(([driver, prob], idx) => (
                   <div key={driver} className="flex justify-between items-center py-2 border-b border-gray-700 last:border-0">
@@ -240,7 +253,10 @@ function PredictionsPage() {
           </div>
 
           <div className="bg-f1-gray rounded-lg p-6">
-            <h2 className="text-xl font-bold mb-4">📈 Prediction Confidence</h2>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <FaChartLine aria-hidden="true" />
+              <span>Prediction Confidence</span>
+            </h2>
             <div className="flex items-center">
               <div className="flex-1 bg-f1-dark rounded-full h-8 overflow-hidden">
                 <div

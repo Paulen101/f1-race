@@ -363,7 +363,7 @@ def _predict_from_history(historical_data: pd.DataFrame, year: int, grand_prix: 
 
 
 def _quick_prediction(year: int, grand_prix: str) -> dict:
-    """Quick prediction based on current season standings and typical performance patterns"""
+    """Quick prediction based on driver ratings with optional qualifying boost."""
     # 2024/2025 typical driver performance (can be updated)
     driver_ratings = {
         'VER': 0.95, 'HAM': 0.85, 'LEC': 0.82, 'NOR': 0.88, 'PER': 0.75,
@@ -373,9 +373,29 @@ def _quick_prediction(year: int, grand_prix: str) -> dict:
         'BEA': 0.54, 'LAW': 0.51, 'COL': 0.48, 'HAD': 0.45
     }
     
-    # Add some randomness for variation
+    # Add deterministic track variation for repeatability
     import random
     random.seed(hash(grand_prix))  # Deterministic randomness based on track
+
+    # Lightweight qualifying integration: one session load, then fast fallback.
+    quali_positions = {}
+    has_quali = False
+    try:
+        quali_session = fastf1.get_session(year, grand_prix, 'Qualifying')
+        quali_session.load(laps=False, telemetry=False, weather=False, messages=False)
+        quali_results = getattr(quali_session, 'results', None)
+
+        if quali_results is not None and not quali_results.empty:
+            for _, row in quali_results.iterrows():
+                code = row.get('Abbreviation', '')
+                pos = row.get('Position', None)
+                if code and pd.notna(pos):
+                    quali_positions[code] = int(pos)
+
+            has_quali = len(quali_positions) > 0
+    except Exception:
+        # Keep quick mode resilient and fast if quali data is unavailable.
+        pass
     
     predictions = {
         'race_winner': {},
@@ -384,7 +404,7 @@ def _quick_prediction(year: int, grand_prix: str) -> dict:
         'confidence': 0.65,
         'data_info': {
             'historical_races': 0,
-            'has_qualifying': False,
+            'has_qualifying': has_quali,
             'season_races_analyzed': 0,
             'mode': 'quick_prediction'
         }
@@ -393,7 +413,15 @@ def _quick_prediction(year: int, grand_prix: str) -> dict:
     for driver, base_rating in driver_ratings.items():
         # Add track-specific variation
         track_factor = random.uniform(0.85, 1.15)
-        adjusted_rating = base_rating * track_factor
+
+        # Grid position meaningfully impacts race outcomes. Boost front rows,
+        # soften deeper grid spots without overwhelming base performance.
+        quali_factor = 1.0
+        if driver in quali_positions:
+            pos = quali_positions[driver]
+            quali_factor = max(0.72, 1.18 - (pos - 1) * 0.02)
+
+        adjusted_rating = base_rating * track_factor * quali_factor
         
         # Win probability
         win_prob = max(0.01, adjusted_rating ** 3)
@@ -414,5 +442,13 @@ def _quick_prediction(year: int, grand_prix: str) -> dict:
         if total > 0:
             predictions[key] = {k: v/total for k, v in predictions[key].items()}
         predictions[key] = dict(sorted(predictions[key].items(), key=lambda x: x[1], reverse=True))
+
+    # Dynamic confidence: increase when qualifying exists and top pick has clear edge.
+    winner_probs = list(predictions['race_winner'].values())
+    top1 = winner_probs[0] if len(winner_probs) > 0 else 0.0
+    top2 = winner_probs[1] if len(winner_probs) > 1 else 0.0
+    separation_bonus = min(0.08, max(0.0, (top1 - top2) * 1.5))
+    quali_bonus = 0.05 if has_quali else 0.0
+    predictions['confidence'] = float(min(0.82, 0.62 + separation_bonus + quali_bonus))
     
     return predictions

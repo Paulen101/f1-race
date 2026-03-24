@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { getLapTimes, getAvailableYears, getAvailableTracks } from '../services/api';
+import { getLapTimes, getAvailableYears, getAvailableTracks, getSessionInfo } from '../services/api';
 import { formatLapTime } from '../utils/helpers';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 function LapTimesPage() {
   const [years, setYears] = useState([]);
   const [tracks, setTracks] = useState([]);
+  const [drivers, setDrivers] = useState([]);
   const [year, setYear] = useState('');
   const [grandPrix, setGrandPrix] = useState('');
   const [sessionName, setSessionName] = useState('Race');
+  const [selectedDriver, setSelectedDriver] = useState(''); // Empty = all drivers
   const [lapData, setLapData] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -43,6 +44,22 @@ function LapTimesPage() {
     fetchTracks();
   }, [year]);
 
+  // Load drivers when grand prix and session change
+  useEffect(() => {
+    const fetchDrivers = async () => {
+      if (!year || !grandPrix || !sessionName) return;
+      try {
+        const data = await getSessionInfo(year, grandPrix, sessionName);
+        setDrivers(data.drivers || []);
+        setSelectedDriver(''); // Reset driver selection
+      } catch (error) {
+        console.error('Error fetching drivers:', error);
+        setDrivers([]);
+      }
+    };
+    fetchDrivers();
+  }, [year, grandPrix, sessionName]);
+
   const handleLoadData = async () => {
     if (!grandPrix) {
       alert('Please select a Grand Prix');
@@ -51,7 +68,8 @@ function LapTimesPage() {
 
     try {
       setLoading(true);
-      const laps = await getLapTimes(year, grandPrix, sessionName);
+      // Pass driver parameter - empty string means all drivers
+      const laps = await getLapTimes(year, grandPrix, sessionName, selectedDriver || null);
       setLapData(laps.laps || []);
     } catch (error) {
       console.error('Error loading lap data:', error);
@@ -90,6 +108,19 @@ function LapTimesPage() {
               <option value="Qualifying">Qualifying</option>
             </select>
           </div>
+        </div>
+        
+        <div className="mb-4">
+          <label className="block text-sm mb-2 font-semibold">Driver (optional)</label>
+          <select 
+            value={selectedDriver} 
+            onChange={(e) => setSelectedDriver(e.target.value)} 
+            disabled={drivers.length === 0}
+            className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none disabled:opacity-50"
+          >
+            <option value="">All Drivers</option>
+            {drivers.map((driver, idx) => (<option key={idx} value={driver}>{driver}</option>))}
+          </select>
         </div>
         
         <button onClick={handleLoadData} disabled={loading || !year || !grandPrix} className="bg-f1-red text-white px-6 py-2 rounded hover:bg-red-700 disabled:bg-gray-600 transition">

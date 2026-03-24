@@ -82,21 +82,77 @@ class FastF1Service:
             # Load telemetry data
             session.load(laps=True, telemetry=True, weather=False, messages=False)
             
-            driver_laps = session.laps.pick_driver(driver)
+            # Try to pick driver - FastF1's pick_driver handles abbreviations automatically
+            try:
+                driver_laps = session.laps.pick_driver(driver)
+                print(f"Found driver {driver} using pick_driver, {len(driver_laps)} laps")
+            except Exception as e:
+                print(f"pick_driver failed for {driver}: {str(e)}")
+                # Fallback: try to map abbreviation to driver number using driver info
+                driver_number = None
+                
+                # Try checking laps dataframe for any lap with matching abbreviation
+                if not session.laps.empty and 'Abbreviation' in session.laps.columns:
+                    matching_laps = session.laps[session.laps['Abbreviation'] == driver]
+                    if not matching_laps.empty:
+                        driver_number = matching_laps.iloc[0]['Driver']
+                        print(f"Found driver {driver} in laps with number {driver_number} (type: {type(driver_number)})")
+                
+                # Try using session.get_driver() API
+                if driver_number is None and hasattr(session, 'drivers') and session.drivers is not None:
+                    for drv in session.drivers:
+                        try:
+                            drv_info = session.get_driver(drv)
+                            if drv_info is not None:
+                                # drv_info is a pandas Series, access like a dict
+                                if isinstance(drv_info, pd.Series) and 'Abbreviation' in drv_info:
+                                    if drv_info['Abbreviation'] == driver:
+                                        driver_number = drv
+                                        print(f"Found driver {driver} via get_driver with number {driver_number} (type: {type(driver_number)})")
+                                        break
+                        except Exception as ex:
+                            print(f"Error checking driver {drv}: {str(ex)}")
+                            continue
+                    
+                if driver_number is None:
+                    available = []
+                    if hasattr(session, 'drivers'):
+                        available = list(session.drivers)
+                    elif 'Driver' in session.laps.columns:
+                        available = session.laps['Driver'].unique().tolist()
+                    raise ValueError(f"Driver {driver} not found in session. Available: {available}")
+                
+                # Filter by driver number - ensure type matching
+                print(f"Filtering laps for driver_number={driver_number}, Driver column type: {session.laps['Driver'].dtype}")
+                driver_laps = session.laps[session.laps['Driver'] == driver_number]
+                print(f"After filtering: {len(driver_laps)} laps found")
             
             if driver_laps.empty:
                 raise ValueError(f"No laps found for driver {driver}")
             
-            if lap_number:
-                lap = driver_laps[driver_laps['LapNumber'] == lap_number].iloc[0]
-            else:
-                lap = driver_laps.pick_fastest()
+            print(f"Total laps for {driver}: {len(driver_laps)}")
             
+            if lap_number:
+                matching_lap = driver_laps[driver_laps['LapNumber'] == lap_number]
+                if matching_lap.empty:
+                    raise ValueError(f"Lap {lap_number} not found for driver {driver}")
+                lap = matching_lap.iloc[0]
+            else:
+                # Pick fastest lap - filter out invalid laps first
+                valid_laps = driver_laps[pd.notna(driver_laps['LapTime'])]
+                if valid_laps.empty:
+                    raise ValueError(f"No valid timed laps found for driver {driver}")
+                print(f"Valid laps for {driver}: {len(valid_laps)}")
+                lap = valid_laps.pick_fastest()
+            
+            print(f"Getting telemetry for {driver} lap {lap['LapNumber']}...")
             telemetry = lap.get_telemetry()
             print(f"Telemetry loaded: {len(telemetry)} data points")
             return telemetry
         except Exception as e:
+            import traceback
             print(f"Error loading telemetry: {str(e)}")
+            print(traceback.format_exc())
             raise HTTPException(
                 status_code=500,
                 detail=f"Error fetching telemetry: {str(e)}"

@@ -36,13 +36,41 @@ async def get_session_info(year: int, grand_prix: str, session_name: str):
     try:
         session = await f1_service.get_session(year, grand_prix, session_name)
         
+        # Get driver abbreviations - try multiple sources
+        drivers = []
+        
+        # First try: results (most reliable when available)
+        if hasattr(session, 'results') and session.results is not None and not session.results.empty:
+            for _, driver in session.results.iterrows():
+                abbr = driver.get('Abbreviation', '')
+                if abbr:
+                    drivers.append(abbr)
+        
+        # Second try: laps dataframe (check if it has Abbreviation column)
+        if not drivers and not session.laps.empty:
+            if 'Abbreviation' in session.laps.columns:
+                # Get unique abbreviations from laps
+                abbreviations = session.laps['Abbreviation'].dropna().unique()
+                drivers = sorted([str(abbr) for abbr in abbreviations])
+            else:
+                # Third try: Use session.get_driver() to map numbers to abbreviations
+                driver_numbers = session.laps['Driver'].unique()
+                for drv_num in driver_numbers:
+                    try:
+                        drv_info = session.get_driver(drv_num)
+                        if drv_info is not None and 'Abbreviation' in drv_info:
+                            drivers.append(drv_info['Abbreviation'])
+                    except:
+                        # If all else fails, use the driver number
+                        drivers.append(str(drv_num))
+        
         return {
             'year': year,
             'grand_prix': grand_prix,
             'session_name': session_name,
             'session_date': session.date.isoformat() if hasattr(session, 'date') and session.date else None,
             'total_laps': len(session.laps),
-            'drivers': sorted(session.laps['Driver'].unique().tolist())
+            'drivers': sorted(drivers) if drivers else []
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -44,12 +44,19 @@ def optimize_telemetry_data(
     if align_by_distance and 'Distance' not in tel.columns:
         # Calculate distance from Time and Speed
         if 'Time' in tel.columns and 'Speed' in tel.columns:
-            tel['Distance'] = _calculate_distance_from_telemetry(tel)
+            try:
+                tel['Distance'] = _calculate_distance_from_telemetry(tel)
+            except Exception as e:
+                print(f"Warning: Could not calculate distance: {e}")
+                # Continue without distance
     
     # Downsample: Keep every Nth point
     # Use integer indexing to ensure we get evenly spaced samples
+    if len(tel) == 0:
+        return []
+    
     sample_indices = np.arange(0, len(tel), downsample_factor)
-    tel_sampled = tel.iloc[sample_indices]
+    tel_sampled = tel.iloc[sample_indices].copy()
     
     # Define columns to include and their transformations
     column_mapping = {
@@ -86,9 +93,15 @@ def optimize_telemetry_data(
             # Convert Time to seconds (float)
             if col_name == 'Time':
                 try:
-                    point[json_key] = round(value.total_seconds(), decimal_places)
-                except (AttributeError, TypeError):
-                    point[json_key] = round(float(value), decimal_places)
+                    # Try timedelta conversion first
+                    if hasattr(value, 'total_seconds'):
+                        point[json_key] = round(value.total_seconds(), decimal_places)
+                    else:
+                        # Already numeric
+                        point[json_key] = round(float(value), decimal_places)
+                except (AttributeError, TypeError, ValueError) as e:
+                    # If conversion fails, skip this field
+                    point[json_key] = None
             # Integer columns (gear, DRS)
             elif col_name in ['nGear', 'DRS']:
                 try:
@@ -140,24 +153,52 @@ def align_telemetry_by_distance(
     # Ensure both have Distance column
     if 'Distance' not in tel1.columns:
         tel1 = tel1.copy()
-        tel1['Distance'] = _calculate_distance_from_telemetry(tel1)
+        try:
+            tel1['Distance'] = _calculate_distance_from_telemetry(tel1)
+        except Exception as e:
+            print(f"Warning: Could not calculate distance for tel1: {e}")
+            # Return originals if distance calculation fails
+            return tel1, tel2
     
     if 'Distance' not in tel2.columns:
         tel2 = tel2.copy()
-        tel2['Distance'] = _calculate_distance_from_telemetry(tel2)
+        try:
+            tel2['Distance'] = _calculate_distance_from_telemetry(tel2)
+        except Exception as e:
+            print(f"Warning: Could not calculate distance for tel2: {e}")
+            # Return originals if distance calculation fails
+            return tel1, tel2
+    
+    # Check if we have valid distances
+    if tel1['Distance'].isna().all() or tel2['Distance'].isna().all():
+        print("Warning: No valid distance data, returning original telemetry")
+        return tel1, tel2
     
     # Get the minimum and maximum distance that both datasets cover
-    min_distance = max(tel1['Distance'].min(), tel2['Distance'].min())
-    max_distance = min(tel1['Distance'].max(), tel2['Distance'].max())
-    
-    # Create common distance points
-    common_distances = np.arange(min_distance, max_distance, distance_step)
-    
-    # Interpolate both telemetry datasets to these common distances
-    tel1_aligned = _interpolate_telemetry_to_distance(tel1, common_distances)
-    tel2_aligned = _interpolate_telemetry_to_distance(tel2, common_distances)
-    
-    return tel1_aligned, tel2_aligned
+    try:
+        min_distance = max(tel1['Distance'].min(), tel2['Distance'].min())
+        max_distance = min(tel1['Distance'].max(), tel2['Distance'].max())
+        
+        # Check if we have a valid range
+        if min_distance >= max_distance or np.isnan(min_distance) or np.isnan(max_distance):
+            print("Warning: Invalid distance range, returning original telemetry")
+            return tel1, tel2
+        
+        # Create common distance points
+        common_distances = np.arange(min_distance, max_distance, distance_step)
+        
+        if len(common_distances) == 0:
+            print("Warning: No common distance points, returning original telemetry")
+            return tel1, tel2
+        
+        # Interpolate both telemetry datasets to these common distances
+        tel1_aligned = _interpolate_telemetry_to_distance(tel1, common_distances)
+        tel2_aligned = _interpolate_telemetry_to_distance(tel2, common_distances)
+        
+        return tel1_aligned, tel2_aligned
+    except Exception as e:
+        print(f"Warning: Error during alignment: {e}, returning original telemetry")
+        return tel1, tel2
 
 
 def _calculate_distance_from_telemetry(telemetry: pd.DataFrame) -> pd.Series:
@@ -175,9 +216,18 @@ def _calculate_distance_from_telemetry(telemetry: pd.DataFrame) -> pd.Series:
     
     # Convert time to seconds
     try:
-        time_seconds = telemetry['Time'].dt.total_seconds()
-    except AttributeError:
-        time_seconds = pd.Series(telemetry['Time'], dtype=float)
+        # Try timedelta conversion first
+        if hasattr(telemetry['Time'].iloc[0], 'total_seconds'):
+            time_seconds = telemetry['Time'].dt.total_seconds()
+        else:
+            # Already numeric
+            time_seconds = pd.to_numeric(telemetry['Time'], errors='coerce')
+    except (AttributeError, TypeError, ValueError):
+        try:
+            time_seconds = pd.to_numeric(telemetry['Time'], errors='coerce')
+        except Exception:
+            # Fallback: use index as approximate time
+            time_seconds = pd.Series(range(len(telemetry)), dtype=float) * 0.1
     
     # Calculate time delta between consecutive points
     time_delta = time_seconds.diff().fillna(0)
@@ -256,41 +306,54 @@ def calculate_telemetry_delta(
     if tel1.empty or tel2.empty:
         return {}
     
-    # Align telemetry by distance for accurate comparison
-    if align:
-        tel1_aligned, tel2_aligned = align_telemetry_by_distance(tel1, tel2)
-    else:
-        tel1_aligned, tel2_aligned = tel1, tel2
-    
-    delta = {}
-    
-    # Speed analysis
-    if 'Speed' in tel1_aligned.columns and 'Speed' in tel2_aligned.columns:
-        speed_diff = tel1_aligned['Speed'] - tel2_aligned['Speed']
-        delta['speed'] = {
-            'max_diff': round(float(speed_diff.max()), 2),
-            'min_diff': round(float(speed_diff.min()), 2),
-            'avg_diff': round(float(speed_diff.mean()), 2),
-            'driver1_max': round(float(tel1_aligned['Speed'].max()), 2),
-            'driver2_max': round(float(tel2_aligned['Speed'].max()), 2),
-            'driver1_avg': round(float(tel1_aligned['Speed'].mean()), 2),
-            'driver2_avg': round(float(tel2_aligned['Speed'].mean()), 2)
-        }
-    
-    # Throttle analysis
-    if 'Throttle' in tel1_aligned.columns and 'Throttle' in tel2_aligned.columns:
-        delta['throttle'] = {
-            'driver1_avg_usage': round(float(tel1_aligned['Throttle'].mean()), 2),
-            'driver2_avg_usage': round(float(tel2_aligned['Throttle'].mean()), 2),
-            'diff': round(float(tel1_aligned['Throttle'].mean() - tel2_aligned['Throttle'].mean()), 2)
-        }
-    
-    # Brake analysis
-    if 'Brake' in tel1_aligned.columns and 'Brake' in tel2_aligned.columns:
-        delta['brake'] = {
-            'driver1_avg_usage': round(float(tel1_aligned['Brake'].mean()), 2),
-            'driver2_avg_usage': round(float(tel2_aligned['Brake'].mean()), 2),
-            'diff': round(float(tel1_aligned['Brake'].mean() - tel2_aligned['Brake'].mean()), 2)
-        }
-    
-    return delta
+    try:
+        # Align telemetry by distance for accurate comparison
+        if align:
+            tel1_aligned, tel2_aligned = align_telemetry_by_distance(tel1, tel2)
+        else:
+            tel1_aligned, tel2_aligned = tel1, tel2
+        
+        delta = {}
+        
+        # Speed analysis
+        if 'Speed' in tel1_aligned.columns and 'Speed' in tel2_aligned.columns:
+            try:
+                speed_diff = tel1_aligned['Speed'] - tel2_aligned['Speed']
+                delta['speed'] = {
+                    'max_diff': round(float(speed_diff.max()), 2),
+                    'min_diff': round(float(speed_diff.min()), 2),
+                    'avg_diff': round(float(speed_diff.mean()), 2),
+                    'driver1_max': round(float(tel1_aligned['Speed'].max()), 2),
+                    'driver2_max': round(float(tel2_aligned['Speed'].max()), 2),
+                    'driver1_avg': round(float(tel1_aligned['Speed'].mean()), 2),
+                    'driver2_avg': round(float(tel2_aligned['Speed'].mean()), 2)
+                }
+            except Exception as e:
+                print(f"Warning: Could not calculate speed delta: {e}")
+        
+        # Throttle analysis
+        if 'Throttle' in tel1_aligned.columns and 'Throttle' in tel2_aligned.columns:
+            try:
+                delta['throttle'] = {
+                    'driver1_avg_usage': round(float(tel1_aligned['Throttle'].mean()), 2),
+                    'driver2_avg_usage': round(float(tel2_aligned['Throttle'].mean()), 2),
+                    'diff': round(float(tel1_aligned['Throttle'].mean() - tel2_aligned['Throttle'].mean()), 2)
+                }
+            except Exception as e:
+                print(f"Warning: Could not calculate throttle delta: {e}")
+        
+        # Brake analysis
+        if 'Brake' in tel1_aligned.columns and 'Brake' in tel2_aligned.columns:
+            try:
+                delta['brake'] = {
+                    'driver1_avg_usage': round(float(tel1_aligned['Brake'].mean()), 2),
+                    'driver2_avg_usage': round(float(tel2_aligned['Brake'].mean()), 2),
+                    'diff': round(float(tel1_aligned['Brake'].mean() - tel2_aligned['Brake'].mean()), 2)
+                }
+            except Exception as e:
+                print(f"Warning: Could not calculate brake delta: {e}")
+        
+        return delta
+    except Exception as e:
+        print(f"Warning: Error calculating telemetry delta: {e}")
+        return {}
