@@ -1,9 +1,8 @@
-"""Driver and team comparison endpoints"""
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Query
-from app.services import f1_service
 import fastf1
 import pandas as pd
-import numpy as np
+from app.services import f1_service
 
 router = APIRouter()
 
@@ -14,48 +13,62 @@ async def compare_drivers(
     grand_prix: str,
     session_name: str,
     drivers: str = Query(..., description="Comma-separated driver codes")
-):
-    """Compare multiple drivers in a specific session"""
+) -> Dict[str, Any]:
+    """Compare multiple drivers in a specific session using vectorized operations"""
     try:
         driver_list = [d.strip() for d in drivers.split(',')]
         
         if len(driver_list) < 2:
             raise HTTPException(status_code=400, detail="At least 2 drivers required")
         
-        session = await f1_service.get_session(year, grand_prix, session_name)
+        # Load session with laps and results
+        session = await f1_service.get_session(year, grand_prix, session_name, load_laps=True)
         
         comparison = []
         
         for driver in driver_list:
-            driver_laps = session.laps.pick_driver(driver)
-            
-            if driver_laps.empty:
+            try:
+                driver_laps = session.laps.pick_driver(driver)
+                
+                if driver_laps.empty:
+                    continue
+                
+                valid_laps = driver_laps[pd.notna(driver_laps['LapTime'])].copy()
+                
+                if valid_laps.empty:
+                    continue
+                
+                # Vectorized time conversion
+                valid_laps['lap_seconds'] = valid_laps['LapTime'].dt.total_seconds()
+                
+                fastest_lap_idx = valid_laps['LapTime'].idxmin()
+                fastest_lap = valid_laps.loc[fastest_lap_idx]
+                lap_times = valid_laps['lap_seconds']
+                
+                # Extract sector times if available
+                sectors = {}
+                for s in ['Sector1Time', 'Sector2Time', 'Sector3Time']:
+                    if s in valid_laps.columns:
+                        sec_times = valid_laps[s].dt.total_seconds()
+                        if not sec_times.isna().all():
+                            sectors[f"{s.lower().replace('time', '')}_best"] = float(sec_times.min())
+                        else:
+                            sectors[f"{s.lower().replace('time', '')}_best"] = None
+                    else:
+                        sectors[f"{s.lower().replace('time', '')}_best"] = None
+
+                comparison.append({
+                    'driver': driver,
+                    'total_laps': len(valid_laps),
+                    'fastest_lap': float(fastest_lap['lap_seconds']),
+                    'average_lap': float(lap_times.mean()),
+                    'median_lap': float(lap_times.median()),
+                    'consistency': float(1 - (lap_times.std() / lap_times.mean())) if lap_times.mean() > 0 else 0,
+                    'sectors': sectors
+                })
+            except Exception as e:
+                print(f"Warning: Could not compare driver {driver}: {e}")
                 continue
-            
-            valid_laps = driver_laps[pd.notna(driver_laps['LapTime'])]
-            
-            if valid_laps.empty:
-                continue
-            
-            fastest_lap = valid_laps.loc[valid_laps['LapTime'].idxmin()]
-            lap_times = valid_laps['LapTime'].dt.total_seconds()
-            
-            comparison.append({
-                'driver': driver,
-                'total_laps': len(valid_laps),
-                'fastest_lap': float(fastest_lap['LapTime'].total_seconds()),
-                'average_lap': float(lap_times.mean()),
-                'median_lap': float(lap_times.median()),
-                'consistency': float(1 - (lap_times.std() / lap_times.mean())) if lap_times.mean() > 0 else 0,
-                'sectors': {
-                    'sector1_best': float(valid_laps['Sector1Time'].dt.total_seconds().min()) 
-                        if 'Sector1Time' in valid_laps.columns and not valid_laps['Sector1Time'].isna().all() else None,
-                    'sector2_best': float(valid_laps['Sector2Time'].dt.total_seconds().min()) 
-                        if 'Sector2Time' in valid_laps.columns and not valid_laps['Sector2Time'].isna().all() else None,
-                    'sector3_best': float(valid_laps['Sector3Time'].dt.total_seconds().min()) 
-                        if 'Sector3Time' in valid_laps.columns and not valid_laps['Sector3Time'].isna().all() else None,
-                }
-            })
         
         return {'comparison': comparison}
     except Exception as e:
@@ -63,8 +76,8 @@ async def compare_drivers(
 
 
 @router.get("/teammates/{year}/{team}")
-async def compare_teammates(year: int, team: str):
-    """Compare teammates across a season"""
+async def compare_teammates(year: int, team: str) -> Dict[str, Any]:
+    """Compare teammates across a season with optimized session loading"""
     try:
         schedule = fastf1.get_event_schedule(year)
         completed_races = schedule[schedule['EventDate'] < pd.Timestamp.now()]
@@ -74,160 +87,159 @@ async def compare_teammates(year: int, team: str):
         for _, event in completed_races.iterrows():
             try:
                 race = fastf1.get_session(year, event['EventName'], 'Race')
-                race.load()
+                # Optimized load: skip laps/telemetry if only results are needed
+                race.load(laps=False, telemetry=False, weather=False, messages=False)
                 
                 results = race.results
                 if results is None or results.empty:
                     continue
                 
-                team_results = results[results['TeamName'].str.contains(team, case=False, na=False)]
+                # Vectorized team filter
+                team_results = results[results['TeamName'].str.contains(team, case=False, na=False)].copy()
                 
-                for _, driver in team_results.iterrows():
-                    driver_code = driver['Abbreviation']
+                if team_results.empty:
+                    continue
+
+                for _, driver_row in team_results.iterrows():
+                    driver_code = driver_row['Abbreviation']
                     
                     if driver_code not in teammate_stats:
                         teammate_stats[driver_code] = {
                             'driver': driver_code,
-                            'name': driver.get('FullName', driver_code),
+                            'name': driver_row.get('FullName', driver_code),
                             'races': 0,
                             'wins': 0,
                             'podiums': 0,
-                            'points': 0,
-                            'average_position': [],
+                            'points': 0.0,
+                            'positions': [],
                             'head_to_head_wins': 0
                         }
                     
                     teammate_stats[driver_code]['races'] += 1
                     
-                    position = driver.get('Position')
-                    if pd.notna(position):
-                        position = int(position)
-                        teammate_stats[driver_code]['average_position'].append(position)
+                    pos = driver_row.get('Position')
+                    if pd.notna(pos):
+                        pos = int(pos)
+                        teammate_stats[driver_code]['positions'].append(pos)
                         
-                        if position == 1:
-                            teammate_stats[driver_code]['wins'] += 1
-                        if position <= 3:
-                            teammate_stats[driver_code]['podiums'] += 1
+                        if pos == 1: teammate_stats[driver_code]['wins'] += 1
+                        if pos <= 3: teammate_stats[driver_code]['podiums'] += 1
                     
-                    points = driver.get('Points', 0)
-                    if pd.notna(points):
-                        teammate_stats[driver_code]['points'] += float(points)
+                    points = driver_row.get('Points', 0)
+                    teammate_stats[driver_code]['points'] += float(points) if pd.notna(points) else 0.0
                 
-                # Determine head-to-head winner for this race
-                if len(team_results) == 2:
-                    positions = team_results['Position'].tolist()
-                    if all(pd.notna(p) for p in positions):
-                        winner_idx = team_results['Position'].idxmin()
-                        winner_code = team_results.loc[winner_idx, 'Abbreviation']
+                # Vectorized head-to-head winner
+                if len(team_results) >= 2:
+                    valid_h2h = team_results[team_results['Position'].notna()]
+                    if len(valid_h2h) >= 2:
+                        winner_code = valid_h2h.loc[valid_h2h['Position'].idxmin(), 'Abbreviation']
                         teammate_stats[winner_code]['head_to_head_wins'] += 1
             
-            except:
+            except Exception as e:
+                print(f"Warning: Error processing teammate comparison for {event['EventName']}: {e}")
                 continue
         
-        # Calculate averages
-        for driver_code in teammate_stats:
-            positions = teammate_stats[driver_code]['average_position']
-            if positions:
-                teammate_stats[driver_code]['average_position'] = sum(positions) / len(positions)
-            else:
-                teammate_stats[driver_code]['average_position'] = None
-        
+        # Calculate final averages and cleanup
+        comparison_list = []
+        for code, stats in teammate_stats.items():
+            avg_pos = sum(stats['positions']) / len(stats['positions']) if stats['positions'] else None
+            del stats['positions']
+            stats['average_position'] = float(avg_pos) if avg_pos is not None else None
+            comparison_list.append(stats)
+            
         return {
             'year': year,
             'team': team,
-            'comparison': list(teammate_stats.values())
+            'comparison': comparison_list
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/head-to-head/{year}/{driver1}/{driver2}")
-async def head_to_head_comparison(year: int, driver1: str, driver2: str):
-    """Detailed head-to-head comparison between two drivers"""
+async def head_to_head_comparison(year: int, driver1: str, driver2: str) -> Dict[str, Any]:
+    """Detailed head-to-head comparison between two drivers with optimized loading"""
     try:
         schedule = fastf1.get_event_schedule(year)
         completed_races = schedule[schedule['EventDate'] < pd.Timestamp.now()]
         
-        comparison = {
-            'driver1': driver1,
-            'driver2': driver2,
-            'year': year,
-            'races': [],
-            'summary': {
-                'driver1_wins': 0,
-                'driver2_wins': 0,
-                'driver1_avg_position': [],
-                'driver2_avg_position': [],
-                'driver1_points': 0,
-                'driver2_points': 0
-            }
+        races_comparison = []
+        summary = {
+            'driver1_wins': 0,
+            'driver2_wins': 0,
+            'driver1_points': 0.0,
+            'driver2_points': 0.0,
+            'driver1_positions': [],
+            'driver2_positions': []
         }
         
         for _, event in completed_races.iterrows():
             try:
                 race = fastf1.get_session(year, event['EventName'], 'Race')
-                race.load()
+                race.load(laps=False, telemetry=False, weather=False, messages=False)
                 
                 results = race.results
                 if results is None or results.empty:
                     continue
                 
-                d1_result = results[results['Abbreviation'] == driver1]
-                d2_result = results[results['Abbreviation'] == driver2]
+                d1_res = results[results['Abbreviation'] == driver1]
+                d2_res = results[results['Abbreviation'] == driver2]
                 
-                if d1_result.empty or d2_result.empty:
+                if d1_res.empty or d2_res.empty:
                     continue
                 
-                d1_pos = d1_result.iloc[0].get('Position')
-                d2_pos = d2_result.iloc[0].get('Position')
+                row1 = d1_res.iloc[0]
+                row2 = d2_res.iloc[0]
                 
-                d1_points = d1_result.iloc[0].get('Points', 0)
-                d2_points = d2_result.iloc[0].get('Points', 0)
+                p1, p2 = row1.get('Position'), row2.get('Position')
+                pts1, pts2 = float(row1.get('Points', 0)), float(row2.get('Points', 0))
                 
-                race_comparison = {
+                race_comp = {
                     'grand_prix': event['EventName'],
-                    'driver1_position': int(d1_pos) if pd.notna(d1_pos) else None,
-                    'driver2_position': int(d2_pos) if pd.notna(d2_pos) else None,
-                    'driver1_points': float(d1_points) if pd.notna(d1_points) else 0,
-                    'driver2_points': float(d2_points) if pd.notna(d2_points) else 0,
+                    'driver1_position': int(p1) if pd.notna(p1) else None,
+                    'driver2_position': int(p2) if pd.notna(p2) else None,
+                    'driver1_points': pts1,
+                    'driver2_points': pts2,
                     'winner': None
                 }
                 
-                if pd.notna(d1_pos) and pd.notna(d2_pos):
-                    d1_pos = int(d1_pos)
-                    d2_pos = int(d2_pos)
+                if pd.notna(p1) and pd.notna(p2):
+                    p1, p2 = int(p1), int(p2)
+                    summary['driver1_positions'].append(p1)
+                    summary['driver2_positions'].append(p2)
                     
-                    comparison['summary']['driver1_avg_position'].append(d1_pos)
-                    comparison['summary']['driver2_avg_position'].append(d2_pos)
-                    
-                    if d1_pos < d2_pos:
-                        comparison['summary']['driver1_wins'] += 1
-                        race_comparison['winner'] = driver1
-                    elif d2_pos < d1_pos:
-                        comparison['summary']['driver2_wins'] += 1
-                        race_comparison['winner'] = driver2
+                    if p1 < p2:
+                        summary['driver1_wins'] += 1
+                        race_comp['winner'] = driver1
+                    elif p2 < p1:
+                        summary['driver2_wins'] += 1
+                        race_comp['winner'] = driver2
                 
-                comparison['summary']['driver1_points'] += float(d1_points) if pd.notna(d1_points) else 0
-                comparison['summary']['driver2_points'] += float(d2_points) if pd.notna(d2_points) else 0
-                
-                comparison['races'].append(race_comparison)
+                summary['driver1_points'] += pts1
+                summary['driver2_points'] += pts2
+                races_comparison.append(race_comp)
             
-            except:
+            except Exception as e:
+                print(f"Warning: Error in h2h for {event['EventName']}: {e}")
                 continue
         
-        # Calculate average positions
-        if comparison['summary']['driver1_avg_position']:
-            comparison['summary']['driver1_avg_position'] = sum(comparison['summary']['driver1_avg_position']) / \
-                                                            len(comparison['summary']['driver1_avg_position'])
-        else:
-            comparison['summary']['driver1_avg_position'] = None
+        # Final aggregation
+        avg1 = sum(summary['driver1_positions']) / len(summary['driver1_positions']) if summary['driver1_positions'] else None
+        avg2 = sum(summary['driver2_positions']) / len(summary['driver2_positions']) if summary['driver2_positions'] else None
         
-        if comparison['summary']['driver2_avg_position']:
-            comparison['summary']['driver2_avg_position'] = sum(comparison['summary']['driver2_avg_position']) / \
-                                                            len(comparison['summary']['driver2_avg_position'])
-        else:
-            comparison['summary']['driver2_avg_position'] = None
-        
-        return comparison
+        return {
+            'driver1': driver1,
+            'driver2': driver2,
+            'year': year,
+            'races': races_comparison,
+            'summary': {
+                'driver1_wins': summary['driver1_wins'],
+                'driver2_wins': summary['driver2_wins'],
+                'driver1_avg_position': float(avg1) if avg1 is not None else None,
+                'driver2_avg_position': float(avg2) if avg2 is not None else None,
+                'driver1_points': summary['driver1_points'],
+                'driver2_points': summary['driver2_points']
+            }
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

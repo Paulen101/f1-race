@@ -1,13 +1,12 @@
 """Telemetry endpoints"""
 from fastapi import APIRouter, HTTPException
-from typing import Optional
-from app.services import f1_service
+from typing import Optional, Dict, Any
+from app.services.fastf1_service import f1_service
 from app.utils.telemetry_optimizer import (
     optimize_telemetry_data,
     align_telemetry_by_distance,
     calculate_telemetry_delta
 )
-import pandas as pd
 
 router = APIRouter()
 
@@ -24,7 +23,7 @@ def compare_telemetry(
     lap_number: Optional[int] = None,
     downsample: int = 10,
     align_by_distance: bool = True
-):
+) -> Dict[str, Any]:
     """
     Compare telemetry between two drivers with distance-aligned data.
     
@@ -88,7 +87,7 @@ def get_driver_telemetry(
     driver: str,
     lap_number: Optional[int] = None,
     downsample: int = 10
-):
+) -> Dict[str, Any]:
     """
     Get optimized telemetry data for a specific driver's lap.
     

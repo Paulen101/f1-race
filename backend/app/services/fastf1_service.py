@@ -13,7 +13,7 @@ class FastF1Service:
         """Initialize FastF1 service with cache"""
         fastf1.Cache.enable_cache(settings.FASTF1_CACHE_DIR)
     
-    async def get_session(self, year: int, grand_prix: str, session_name: str, load_laps: bool = True, load_telemetry: bool = False):
+    async def get_session(self, year: int, grand_prix: str, session_name: str, load_laps: bool = True, load_telemetry: bool = False) -> fastf1.core.Session:
         """Get a specific session - optimized to only load what's needed"""
         try:
             print(f"Loading session: {year} {grand_prix} {session_name}")
@@ -29,7 +29,7 @@ class FastF1Service:
                 detail=f"Session not found for {year} {grand_prix} {session_name}: {str(e)}"
             )
     
-    async def get_laps(self, year: int, grand_prix: str, session_name: str, driver: Optional[str] = None):
+    async def get_laps(self, year: int, grand_prix: str, session_name: str, driver: Optional[str] = None) -> fastf1.core.Laps:
         """Get lap data for a session or specific driver"""
         try:
             session = await self.get_session(year, grand_prix, session_name)
@@ -47,7 +47,7 @@ class FastF1Service:
             )
     
     async def get_telemetry(self, year: int, grand_prix: str, session_name: str, 
-                           driver: str, lap_number: Optional[int] = None):
+                           driver: str, lap_number: Optional[int] = None) -> pd.DataFrame:
         """Get telemetry data for a driver"""
         try:
             # For telemetry we NEED to load it
@@ -68,7 +68,7 @@ class FastF1Service:
             )
     
     def get_telemetry_sync(self, year: int, grand_prix: str, session_name: str, 
-                          driver: str, lap_number: Optional[int] = None):
+                          driver: str, lap_number: Optional[int] = None) -> pd.DataFrame:
         """
         Synchronous version of get_telemetry for FastAPI thread pool execution.
         
@@ -158,7 +158,7 @@ class FastF1Service:
                 detail=f"Error fetching telemetry: {str(e)}"
             )
     
-    async def get_driver_standings(self, year: int):
+    async def get_driver_standings(self, year: int) -> List[Dict[str, Any]]:
         """Get driver standings for a season - optimized version"""
         try:
             # Get all race results for the year
@@ -214,7 +214,7 @@ class FastF1Service:
                 detail=f"Error fetching standings: {str(e)}"
             )
     
-    async def get_weather_data(self, year: int, grand_prix: str, session_name: str):
+    async def get_weather_data(self, year: int, grand_prix: str, session_name: str) -> pd.DataFrame:
         """Get weather data for a session"""
         try:
             session = await self.get_session(year, grand_prix, session_name)
@@ -228,7 +228,7 @@ class FastF1Service:
     
     async def compare_lap_telemetry(self, year: int, grand_prix: str, 
                                    session_name: str, driver1: str, driver2: str,
-                                   lap_number: Optional[int] = None):
+                                   lap_number: Optional[int] = None) -> Dict[str, Any]:
         """Compare telemetry between two drivers"""
         try:
             tel1 = await self.get_telemetry(year, grand_prix, session_name, driver1, lap_number)
@@ -250,28 +250,42 @@ class FastF1Service:
                 detail=f"Error comparing telemetry: {str(e)}"
             )
     
-    async def get_pit_stops(self, year: int, grand_prix: str):
-        """Get pit stop data for a race"""
+    async def get_pit_stops(self, year: int, grand_prix: str) -> List[Dict[str, Any]]:
+        """Get pit stop data for a race using vectorized operations"""
         try:
             session = await self.get_session(year, grand_prix, 'Race')
             laps = session.laps
             
-            # Identify pit stops
+            if laps.empty:
+                return []
+                
+            # Vectorized pit stop detection:
+            # 1. Identify where compound changes or tyre life resets (lower than previous)
+            # 2. Sort by driver and lap to ensure correct comparison
+            laps_sorted = laps.sort_values(['Driver', 'LapNumber'])
+            
+            # Shift compound and tyre life within each driver group
+            laps_sorted['PrevCompound'] = laps_sorted.groupby('Driver')['Compound'].shift(1)
+            laps_sorted['PrevTyreLife'] = laps_sorted.groupby('Driver')['TyreLife'].shift(1)
+            
+            # Detect pit stops: compound changed OR tyre life reset
+            pit_stop_mask = (
+                (laps_sorted['Compound'] != laps_sorted['PrevCompound']) | 
+                (laps_sorted['TyreLife'] < laps_sorted['PrevTyreLife'])
+            ) & laps_sorted['PrevCompound'].notna()
+            
+            pit_laps = laps_sorted[pit_stop_mask].copy()
+            
+            # Build result list
             pit_stops = []
-            for driver in laps['Driver'].unique():
-                driver_laps = laps[laps['Driver'] == driver]
-                for idx in range(1, len(driver_laps)):
-                    current = driver_laps.iloc[idx]
-                    previous = driver_laps.iloc[idx - 1]
-                    
-                    if current['Compound'] != previous['Compound'] or current['TyreLife'] < previous['TyreLife']:
-                        pit_stops.append({
-                            'driver': driver,
-                            'lap': int(current['LapNumber']),
-                            'stop_duration': float(current['PitInTime'] - previous['PitOutTime']) if pd.notna(current['PitInTime']) else None,
-                            'from_compound': previous['Compound'],
-                            'to_compound': current['Compound']
-                        })
+            for _, lap in pit_laps.iterrows():
+                pit_stops.append({
+                    'driver': lap['Driver'],
+                    'lap': int(lap['LapNumber']),
+                    'from_compound': lap['PrevCompound'],
+                    'to_compound': lap['Compound'],
+                    'tyre_life_before': float(lap['PrevTyreLife']) if pd.notna(lap['PrevTyreLife']) else None
+                })
             
             return pit_stops
         except Exception as e:

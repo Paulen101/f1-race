@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { FaBolt, FaChartLine, FaFlagCheckered, FaMedal, FaTrophy } from 'react-icons/fa';
+import { FaBolt, FaChartLine, FaFlagCheckered, FaMedal, FaTrophy, FaSync } from 'react-icons/fa';
 import { 
-  predictRaceQuick,
+  predictRace,
   getAvailableYears, 
   getAvailableTracks,
   getNextRace 
@@ -18,6 +18,8 @@ function PredictionsPage() {
   const [predictions, setPredictions] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingTracks, setLoadingTracks] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState('');
 
   // Load available years on mount
   useEffect(() => {
@@ -75,12 +77,42 @@ function PredictionsPage() {
     try {
       setLoading(true);
       setPredictions(null);
-      const data = await predictRaceQuick(selectedYear, selectedTrack);
-      setPredictions(data);
+      setProgress(0);
+      setStatus('Initializing prediction engine...');
+
+      // Mock progress interval to keep user informed
+      const interval = setInterval(() => {
+        setProgress(prev => {
+          if (prev < 30) {
+            setStatus('Fetching 2-year historical data...');
+            return prev + 2;
+          }
+          if (prev < 60) {
+            setStatus('Analyzing driver performance and track characteristics...');
+            return prev + 1;
+          }
+          if (prev < 90) {
+            setStatus('Calculating probabilities and confidence scores...');
+            return prev + 0.5;
+          }
+          return prev;
+        });
+      }, 300);
+
+      const data = await predictRace(selectedYear, selectedTrack);
+      
+      clearInterval(interval);
+      setProgress(100);
+      setStatus(data.status || 'Prediction generated successfully!');
+      
+      setTimeout(() => {
+        setPredictions(data);
+        setLoading(false);
+      }, 500);
+      
     } catch (error) {
       console.error('Error making prediction:', error);
       alert('Error making prediction: ' + (error.response?.data?.detail || error.message));
-    } finally {
       setLoading(false);
     }
   };
@@ -104,7 +136,7 @@ function PredictionsPage() {
       
       <div className="bg-f1-gray rounded-lg p-6 mb-6">
         <p className="text-gray-300 mb-6">
-          AI-powered race predictions based on driver performance ratings and track characteristics.
+          Advanced AI predictions utilizing the last 2 years of F1 data, qualifying results, and track-specific analytics.
         </p>
 
         {nextRace && (
@@ -155,13 +187,35 @@ function PredictionsPage() {
         <button
           onClick={handlePredictRace}
           disabled={loading || !selectedYear || !selectedTrack}
-          className="bg-f1-red text-white px-6 py-2 rounded hover:bg-red-700 disabled:bg-gray-600 transition"
+          className="bg-f1-red text-white px-6 py-2 rounded hover:bg-red-700 disabled:bg-gray-600 transition flex items-center gap-2"
         >
-          {loading ? 'Predicting...' : 'Predict Race'}
+          {loading ? (
+            <>
+              <FaSync className="animate-spin" />
+              <span>Predicting...</span>
+            </>
+          ) : (
+            'Generate Prediction'
+          )}
         </button>
+
+        {loading && (
+          <div className="mt-6">
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-f1-red font-semibold">{status}</span>
+              <span className="text-gray-400">{Math.round(progress)}%</span>
+            </div>
+            <div className="w-full bg-f1-dark rounded-full h-2.5 overflow-hidden">
+              <div 
+                className="bg-f1-red h-full transition-all duration-300 ease-out"
+                style={{ width: `${progress}%` }}
+              ></div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {predictions && (
+      {predictions && !loading && (
         <>
           <div className="grid md:grid-cols-3 gap-6 mb-6">
             {/* Race Winner */}
@@ -255,21 +309,29 @@ function PredictionsPage() {
           <div className="bg-f1-gray rounded-lg p-6">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
               <FaChartLine aria-hidden="true" />
-              <span>Prediction Confidence</span>
+              <span>Prediction Insights</span>
             </h2>
-            <div className="flex items-center">
-              <div className="flex-1 bg-f1-dark rounded-full h-8 overflow-hidden">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex-1 bg-f1-dark rounded-full h-8 overflow-hidden relative">
                 <div
-                  className="bg-f1-red h-full flex items-center justify-center text-sm font-bold transition-all"
+                  className="bg-f1-red h-full flex items-center justify-center text-sm font-bold transition-all duration-500"
                   style={{ width: `${(predictions.confidence * 100).toFixed(0)}%` }}
                 >
-                  {(predictions.confidence * 100).toFixed(0)}%
+                  <span className="z-10">Confidence: {(predictions.confidence * 100).toFixed(0)}%</span>
                 </div>
               </div>
             </div>
-            <p className="text-sm text-gray-400 mt-2">
-              Based on driver performance ratings and statistical analysis.
-            </p>
+            <div className="bg-f1-dark rounded p-4 border-l-4 border-f1-red">
+              <p className="text-white text-sm">
+                <span className="text-f1-red font-bold">Analysis Status:</span> {status}
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-400">
+                <div>• Historical Races Analyzed: {predictions.data_info?.historical_races}</div>
+                <div>• Qualifying Data Used: {predictions.data_info?.has_quali ? 'Yes' : 'No'}</div>
+                <div>• Data Window: 24 Months</div>
+                <div>• ML Model: Optimized Vector Engine</div>
+              </div>
+            </div>
           </div>
         </>
       )}

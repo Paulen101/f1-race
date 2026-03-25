@@ -6,13 +6,13 @@ from app.models import PredictionRequest, PredictionResponse
 import pandas as pd
 import fastf1
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 router = APIRouter()
 
 
 @router.get("/years")
-async def get_available_years():
+async def get_available_years() -> Dict[str, List[int]]:
     """Get list of available years for predictions"""
     current_year = datetime.now().year
     # F1 data typically available from 2018 onwards with FastF1
@@ -21,7 +21,7 @@ async def get_available_years():
 
 
 @router.get("/tracks/{year}")
-async def get_available_tracks(year: int):
+async def get_available_tracks(year: int) -> Dict[str, Any]:
     """Get list of available tracks for a specific year"""
     try:
         schedule = fastf1.get_event_schedule(year)
@@ -42,27 +42,39 @@ async def get_available_tracks(year: int):
 
 
 @router.get("/drivers/{year}")
-async def get_available_drivers(year: int):
-    """Get list of drivers for a specific year"""
+async def get_available_drivers(year: int) -> Dict[str, Any]:
+    """Get list of drivers for a specific year efficiently"""
     try:
         schedule = fastf1.get_event_schedule(year)
         drivers_set = set()
         
-        # Get drivers from first completed race
-        for _, event in schedule.iterrows():
-            if event['EventDate'] < pd.Timestamp.now():
-                try:
-                    session = fastf1.get_session(year, event['EventName'], 'Race')
-                    session.load()
-                    if hasattr(session, 'results') and session.results is not None:
-                        for _, driver in session.results.iterrows():
-                            abbr = driver.get('Abbreviation', '')
-                            full_name = driver.get('FullName', '') or driver.get('Driver', '')
-                            if abbr:
-                                drivers_set.add((abbr, full_name))
-                        break
-                except:
-                    continue
+        # Get the most recent completed race to get a representative driver list
+        # Filter for completed races (EventDate < now) and sort by date descending
+        completed_races = schedule[schedule['EventDate'] < pd.Timestamp.now()].sort_values('EventDate', ascending=False)
+        
+        if completed_races.empty:
+            # If no races completed yet, try to get drivers from the first race of the year
+            # (which might be the upcoming one)
+            completed_races = schedule.iloc[:1]
+
+        for _, event in completed_races.iterrows():
+            try:
+                # Only load the first successful session we find
+                session = fastf1.get_session(year, event['EventName'], 'Race')
+                session.load(laps=False, telemetry=False, weather=False, messages=False)
+                
+                if hasattr(session, 'results') and session.results is not None:
+                    for _, driver in session.results.iterrows():
+                        abbr = driver.get('Abbreviation', '')
+                        full_name = driver.get('FullName', '') or driver.get('Driver', '')
+                        if abbr:
+                            drivers_set.add((abbr, full_name))
+                    
+                    if drivers_set:
+                        break # Successfully got drivers, no need to check more races
+            except Exception as e:
+                print(f"Warning: Could not load session for {event['EventName']}: {e}")
+                continue
         
         drivers = [{"code": code, "name": name} for code, name in sorted(drivers_set, key=lambda x: x[1])]
         return {"year": year, "drivers": drivers}
@@ -71,7 +83,7 @@ async def get_available_drivers(year: int):
 
 
 @router.get("/next-race/{year}")
-async def get_next_race(year: int):
+async def get_next_race(year: int) -> Dict[str, Any]:
     """Get the next upcoming race for predictions"""
     try:
         schedule = fastf1.get_event_schedule(year)
@@ -95,7 +107,7 @@ async def get_next_race(year: int):
 
 
 @router.post("/race")
-async def predict_race_outcome(request: PredictionRequest):
+async def predict_race_outcome(request: PredictionRequest) -> Dict[str, Any]:
     """Predict race outcome based on past season data and qualifying results"""
     try:
         print(f"Predicting race for {request.year} {request.grand_prix}")
@@ -119,8 +131,9 @@ async def predict_race_outcome(request: PredictionRequest):
         except:
             print(f"Qualifying data not available, using historical performance only")
         
-        # Only use 2 previous years instead of 3 for faster loading
-        multi_season_data = await _get_multi_season_data(max(2018, request.year - 2), request.year - 1, limit_races=15)
+        # Use only the last 2 previous years for the most relevant data
+        current_year = request.year
+        multi_season_data = await _get_multi_season_data(max(2018, current_year - 2), current_year - 1, limit_races=20)
         
         # Combine with current season data
         all_historical = pd.concat([multi_season_data, historical_data], ignore_index=True) if not historical_data.empty else multi_season_data
@@ -132,8 +145,10 @@ async def predict_race_outcome(request: PredictionRequest):
         # Make prediction based on available data
         if has_quali:
             prediction = _predict_with_quali(all_historical, quali_results, request.grand_prix)
+            prediction['status'] = 'Prediction completed using qualifying and 2-year historical data'
         else:
             prediction = _predict_from_history(all_historical, request.year, request.grand_prix)
+            prediction['status'] = 'Prediction completed using 2-year historical data'
         
         prediction['data_info'] = {
             'historical_races': len(all_historical) // 20 if len(all_historical) > 0 else 0,
@@ -148,7 +163,7 @@ async def predict_race_outcome(request: PredictionRequest):
 
 
 @router.post("/race/quick")
-async def predict_race_quick(request: PredictionRequest):
+async def predict_race_quick(request: PredictionRequest) -> Dict[str, Any]:
     """Quick prediction without loading historical data - instant results"""
     try:
         return _quick_prediction(request.year, request.grand_prix)
@@ -158,7 +173,7 @@ async def predict_race_quick(request: PredictionRequest):
 
 
 @router.get("/championship/{year}")
-async def predict_championship(year: int, remaining_races: int = 5):
+async def predict_championship(year: int, remaining_races: int = 5) -> Dict[str, Any]:
     """Predict final championship standings"""
     try:
         # Get current standings
@@ -177,7 +192,7 @@ async def predict_championship(year: int, remaining_races: int = 5):
 
 
 @router.get("/podium/{year}/{grand_prix}")
-async def predict_podium(year: int, grand_prix: str):
+async def predict_podium(year: int, grand_prix: str) -> Dict[str, Any]:
     """Predict podium finishers for a specific race"""
     try:
         request = PredictionRequest(year=year, grand_prix=grand_prix)
@@ -447,8 +462,9 @@ def _quick_prediction(year: int, grand_prix: str) -> dict:
     winner_probs = list(predictions['race_winner'].values())
     top1 = winner_probs[0] if len(winner_probs) > 0 else 0.0
     top2 = winner_probs[1] if len(winner_probs) > 1 else 0.0
-    separation_bonus = min(0.08, max(0.0, (top1 - top2) * 1.5))
-    quali_bonus = 0.05 if has_quali else 0.0
-    predictions['confidence'] = float(min(0.82, 0.62 + separation_bonus + quali_bonus))
+    separation_bonus = min(0.12, max(0.0, (top1 - top2) * 2.0))
+    quali_bonus = 0.08 if has_quali else 0.0
+    predictions['confidence'] = float(min(0.95, 0.75 + separation_bonus + quali_bonus))
     
     return predictions
+

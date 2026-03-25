@@ -67,35 +67,40 @@ def normalize_data(data: List[float]) -> List[float]:
 
 
 def aggregate_by_stint(laps_df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """Aggregate lap data by tire stint"""
+    """
+    Aggregate lap data by tire stint using vectorized operations.
+    
+    Args:
+        laps_df: DataFrame containing lap data with 'Compound' and 'LapTime' columns
+        
+    Returns:
+        List of dictionaries containing stint information (compound, num_laps, average_time)
+    """
     if laps_df.empty:
         return []
     
-    stints = []
-    current_compound = None
-    stint_laps = []
+    # Identify stint changes (where compound changes)
+    # We create a stint ID by checking where the compound is different from the previous row
+    # and taking the cumulative sum.
+    laps = laps_df.copy()
+    laps['StintID'] = (laps['Compound'] != laps['Compound'].shift()).cumsum()
     
-    for _, lap in laps_df.iterrows():
-        compound = lap.get('Compound')
-        
-        if compound != current_compound and current_compound is not None:
-            if stint_laps:
-                stints.append({
-                    'compound': current_compound,
-                    'num_laps': len(stint_laps),
-                    'average_time': np.mean([l['LapTime'] for l in stint_laps if pd.notna(l['LapTime'])]),
-                })
-            stint_laps = []
-        
-        current_compound = compound
-        stint_laps.append(lap)
+    # Group by StintID and Compound to aggregate
+    stint_groups = laps.groupby(['StintID', 'Compound'])
     
-    # Add final stint
-    if stint_laps:
-        stints.append({
-            'compound': current_compound,
-            'num_laps': len(stint_laps),
-            'average_time': np.mean([l['LapTime'] for l in stint_laps if pd.notna(l['LapTime'])]),
+    # Calculate aggregations
+    stints_data = stint_groups.agg(
+        num_laps=('LapNumber', 'count'),
+        average_time=('LapTime', lambda x: x.mean() if not x.isna().all() else np.nan)
+    ).reset_index()
+    
+    # Convert to list of dicts
+    result = []
+    for _, row in stints_data.iterrows():
+        result.append({
+            'compound': row['Compound'],
+            'num_laps': int(row['num_laps']),
+            'average_time': float(row['average_time']) if pd.notna(row['average_time']) else None
         })
-    
-    return stints
+        
+    return result

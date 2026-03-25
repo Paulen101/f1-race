@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { compareTelemetry, getAvailableYears, getAvailableTracks, getSessionInfo } from '../services/api';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter, ZAxis } from 'recharts';
+import { exportToCSV } from '../utils/helpers';
 
 function TelemetryPage() {
   const [year, setYear] = useState(2024);
@@ -93,9 +94,18 @@ function TelemetryPage() {
     }
   };
 
+  const handleExportCSV = () => {
+    if (!telemetryData) return;
+    
+    const tel1 = telemetryData.driver1.telemetry.map(p => ({ ...p, driver: driver1 }));
+    const tel2 = telemetryData.driver2.telemetry.map(p => ({ ...p, driver: driver2 }));
+    
+    exportToCSV([...tel1, ...tel2], `telemetry_${year}_${grandPrix}_${driver1}_${driver2}`);
+  };
+
   // Prepare chart data
   const prepareChartData = () => {
-    if (!telemetryData) return { speed: [], throttle: [], brake: [] };
+    if (!telemetryData) return { speed: [], throttle: [], brake: [], track1: [], track2: [] };
     
     const tel1 = telemetryData.driver1?.telemetry || [];
     const tel2 = telemetryData.driver2?.telemetry || [];
@@ -117,8 +127,22 @@ function TelemetryPage() {
       [driver1]: point.Brake || point.brake,
       [driver2]: tel2[idx]?.Brake || tel2[idx]?.brake
     }));
+
+    const track1 = tel1.map(point => ({
+      x: point.x,
+      y: point.y,
+      speed: point.speed,
+      driver: driver1
+    })).filter(p => p.x !== undefined && p.y !== undefined);
+
+    const track2 = tel2.map(point => ({
+      x: point.x,
+      y: point.y,
+      speed: point.speed,
+      driver: driver2
+    })).filter(p => p.x !== undefined && p.y !== undefined);
     
-    return { speed: speedData, throttle: throttleData, brake: brakeData };
+    return { speed: speedData, throttle: throttleData, brake: brakeData, track1, track2 };
   };
 
   const chartData = prepareChartData();
@@ -220,84 +244,121 @@ function TelemetryPage() {
             <div className="bg-f1-dark rounded p-4">
               <div className="text-sm text-gray-400">Max Speed Difference</div>
               <div className="text-2xl font-bold">
-                {telemetryData.delta_analysis.max_speed_diff?.toFixed(1) || '--'} km/h
+                {telemetryData.delta_analysis.speed?.max_diff?.toFixed(1) || '--'} km/h
               </div>
             </div>
             <div className="bg-f1-dark rounded p-4">
               <div className="text-sm text-gray-400">Avg Speed Difference</div>
               <div className="text-2xl font-bold">
-                {telemetryData.delta_analysis.avg_speed_diff?.toFixed(1) || '--'} km/h
+                {telemetryData.delta_analysis.speed?.avg_diff?.toFixed(1) || '--'} km/h
               </div>
             </div>
             <div className="bg-f1-dark rounded p-4">
               <div className="text-sm text-gray-400">Throttle Usage Diff</div>
               <div className="text-2xl font-bold">
-                {telemetryData.delta_analysis.throttle_usage_diff?.toFixed(1) || '--'}%
+                {telemetryData.delta_analysis.throttle?.diff?.toFixed(1) || '--'}%
               </div>
             </div>
             <div className="bg-f1-dark rounded p-4">
               <div className="text-sm text-gray-400">Brake Usage Diff</div>
               <div className="text-2xl font-bold">
-                {telemetryData.delta_analysis.brake_usage_diff?.toFixed(1) || '--'}%
+                {telemetryData.delta_analysis.brake?.diff?.toFixed(1) || '--'}%
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Speed Chart */}
-      {chartData.speed.length > 0 && (
-        <div className="bg-f1-gray rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">Speed Comparison</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData.speed}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-              <XAxis dataKey="distance" stroke="#fff" label={{ value: 'Distance (m)', position: 'insideBottom', offset: -5 }} />
-              <YAxis stroke="#fff" label={{ value: 'Speed (km/h)', angle: -90, position: 'insideLeft' }} />
-              <Tooltip contentStyle={{ backgroundColor: '#38383F', border: 'none' }} />
-              <Legend />
-              <Line type="monotone" dataKey={driver1} stroke="#E10600" dot={false} strokeWidth={2} />
-              <Line type="monotone" dataKey={driver2} stroke="#00A000" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      <div className="grid lg:grid-cols-2 gap-6 mb-6">
+        {/* Track Map */}
+        {chartData.track1.length > 0 && (
+          <div className="bg-f1-gray rounded-lg p-6">
+            <h2 className="text-xl font-bold mb-4">Track Map</h2>
+            <ResponsiveContainer width="100%" height={400}>
+              <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                <XAxis type="number" dataKey="x" name="X" hide />
+                <YAxis type="number" dataKey="y" name="Y" hide />
+                <ZAxis type="number" dataKey="speed" range={[20, 20]} />
+                <Tooltip 
+                  cursor={{ strokeDasharray: '3 3' }}
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div className="bg-f1-dark p-2 border border-gray-600 rounded">
+                          <p className="text-f1-red font-bold">{data.driver}</p>
+                          <p>Speed: {data.speed} km/h</p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Legend />
+                <Scatter name={driver1} data={chartData.track1} fill="#E10600" line={{ stroke: '#E10600', strokeWidth: 2 }} shape="circle" />
+                <Scatter name={driver2} data={chartData.track2} fill="#00A000" line={{ stroke: '#00A000', strokeWidth: 2 }} shape="circle" />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        )}
 
-      {/* Throttle Chart */}
-      {chartData.throttle.length > 0 && (
-        <div className="bg-f1-gray rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">Throttle Application</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData.throttle}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-              <XAxis dataKey="distance" stroke="#fff" label={{ value: 'Distance (m)', position: 'insideBottom', offset: -5 }} />
-              <YAxis stroke="#fff" label={{ value: 'Throttle (%)', angle: -90, position: 'insideLeft' }} />
-              <Tooltip contentStyle={{ backgroundColor: '#38383F', border: 'none' }} />
-              <Legend />
-              <Line type="monotone" dataKey={driver1} stroke="#E10600" dot={false} strokeWidth={2} />
-              <Line type="monotone" dataKey={driver2} stroke="#00A000" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+        {/* Speed Chart */}
+        {chartData.speed.length > 0 && (
+          <div className="bg-f1-gray rounded-lg p-6">
+            <h2 className="text-xl font-bold mb-4">Speed Comparison</h2>
+            <ResponsiveContainer width="100%" height={400}>
+              <LineChart data={chartData.speed}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                <XAxis dataKey="distance" stroke="#fff" label={{ value: 'Distance (m)', position: 'insideBottom', offset: -5 }} />
+                <YAxis stroke="#fff" label={{ value: 'km/h', angle: -90, position: 'insideLeft' }} />
+                <Tooltip contentStyle={{ backgroundColor: '#38383F', border: 'none' }} />
+                <Legend />
+                <Line type="monotone" dataKey={driver1} stroke="#E10600" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey={driver2} stroke="#00A000" dot={false} strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
 
-      {/* Brake Chart */}
-      {chartData.brake.length > 0 && (
-        <div className="bg-f1-gray rounded-lg p-6">
-          <h2 className="text-xl font-bold mb-4">Brake Application</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData.brake}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-              <XAxis dataKey="distance" stroke="#fff" label={{ value: 'Distance (m)', position: 'insideBottom', offset: -5 }} />
-              <YAxis stroke="#fff" label={{ value: 'Brake', angle: -90, position: 'insideLeft' }} />
-              <Tooltip contentStyle={{ backgroundColor: '#38383F', border: 'none' }} />
-              <Legend />
-              <Line type="monotone" dataKey={driver1} stroke="#E10600" dot={false} strokeWidth={2} />
-              <Line type="monotone" dataKey={driver2} stroke="#00A000" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Throttle Chart */}
+        {chartData.throttle.length > 0 && (
+          <div className="bg-f1-gray rounded-lg p-6">
+            <h2 className="text-xl font-bold mb-4">Throttle Application</h2>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={chartData.throttle}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                <XAxis dataKey="distance" stroke="#fff" label={{ value: 'Distance (m)', position: 'insideBottom', offset: -5 }} />
+                <YAxis stroke="#fff" label={{ value: '%', angle: -90, position: 'insideLeft' }} />
+                <Tooltip contentStyle={{ backgroundColor: '#38383F', border: 'none' }} />
+                <Legend />
+                <Line type="monotone" dataKey={driver1} stroke="#E10600" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey={driver2} stroke="#00A000" dot={false} strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Brake Chart */}
+        {chartData.brake.length > 0 && (
+          <div className="bg-f1-gray rounded-lg p-6">
+            <h2 className="text-xl font-bold mb-4">Brake Application</h2>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={chartData.brake}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                <XAxis dataKey="distance" stroke="#fff" label={{ value: 'Distance (m)', position: 'insideBottom', offset: -5 }} />
+                <YAxis stroke="#fff" label={{ value: 'Brake', angle: -90, position: 'insideLeft' }} />
+                <Tooltip contentStyle={{ backgroundColor: '#38383F', border: 'none' }} />
+                <Legend />
+                <Line type="monotone" dataKey={driver1} stroke="#E10600" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey={driver2} stroke="#00A000" dot={false} strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

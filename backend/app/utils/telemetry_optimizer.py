@@ -25,14 +25,6 @@ def optimize_telemetry_data(
     
     Returns:
         List of dictionaries ready for JSON serialization
-        
-    Example:
-        >>> session = fastf1.get_session(2024, 'Monaco', 'Race')
-        >>> session.load(telemetry=True)
-        >>> lap = session.laps.pick_driver('VER').pick_fastest()
-        >>> tel = lap.get_telemetry()
-        >>> optimized = optimize_telemetry_data(tel, downsample_factor=10)
-        >>> print(f"Original: {len(tel)} points, Optimized: {len(optimized)} points")
     """
     if telemetry is None or telemetry.empty:
         return []
@@ -42,16 +34,13 @@ def optimize_telemetry_data(
     
     # Add Distance column if missing and requested
     if align_by_distance and 'Distance' not in tel.columns:
-        # Calculate distance from Time and Speed
         if 'Time' in tel.columns and 'Speed' in tel.columns:
             try:
                 tel['Distance'] = _calculate_distance_from_telemetry(tel)
             except Exception as e:
                 print(f"Warning: Could not calculate distance: {e}")
-                # Continue without distance
     
     # Downsample: Keep every Nth point
-    # Use integer indexing to ensure we get evenly spaced samples
     if len(tel) == 0:
         return []
     
@@ -73,58 +62,42 @@ def optimize_telemetry_data(
         'Z': 'z'
     }
     
-    # Build optimized data structure
-    optimized_data = []
+    # Identify existing columns for mapping
+    existing_cols = [col for col in column_mapping.keys() if col in tel_sampled.columns]
+    tel_final = tel_sampled[existing_cols].copy()
     
-    for _, row in tel_sampled.iterrows():
-        point = {}
-        
-        for col_name, json_key in column_mapping.items():
-            if col_name not in tel_sampled.columns:
-                continue
+    # Vectorized transformations
+    if 'Time' in tel_final.columns:
+        # Convert Time (timedelta or numeric) to seconds
+        if hasattr(tel_final['Time'].iloc[0], 'total_seconds'):
+            tel_final['Time'] = tel_final['Time'].dt.total_seconds().round(decimal_places)
+        else:
+            tel_final['Time'] = pd.to_numeric(tel_final['Time'], errors='coerce').round(decimal_places)
+
+    # Round numeric columns (excluding integers and Time which is handled above)
+    float_cols = ['Distance', 'Speed', 'Throttle', 'Brake', 'RPM', 'X', 'Y', 'Z']
+    for col in float_cols:
+        if col in tel_final.columns:
+            tel_final[col] = pd.to_numeric(tel_final[col], errors='coerce').round(decimal_places)
             
-            value = row[col_name]
-            
-            # Handle NaN values
-            if pd.isna(value):
-                point[json_key] = None
-                continue
-            
-            # Convert Time to seconds (float)
-            if col_name == 'Time':
-                try:
-                    # Try timedelta conversion first
-                    if hasattr(value, 'total_seconds'):
-                        point[json_key] = round(value.total_seconds(), decimal_places)
-                    else:
-                        # Already numeric
-                        point[json_key] = round(float(value), decimal_places)
-                except (AttributeError, TypeError, ValueError) as e:
-                    # If conversion fails, skip this field
-                    point[json_key] = None
-            # Integer columns (gear, DRS)
-            elif col_name in ['nGear', 'DRS']:
-                try:
-                    point[json_key] = int(value)
-                except (ValueError, TypeError):
-                    point[json_key] = None
-            # Float columns (everything else)
-            else:
-                try:
-                    point[json_key] = round(float(value), decimal_places)
-                except (ValueError, TypeError):
-                    point[json_key] = None
-        
-        optimized_data.append(point)
+    # Convert integer columns
+    int_cols = ['nGear', 'DRS']
+    for col in int_cols:
+        if col in tel_final.columns:
+            tel_final[col] = pd.to_numeric(tel_final[col], errors='coerce').fillna(0).astype(int)
+
+    # Rename columns to match frontend expectation
+    tel_final = tel_final.rename(columns={k: v for k, v in column_mapping.items() if k in existing_cols})
     
-    return optimized_data
+    # Convert to list of dicts using vectorized to_dict method
+    return tel_final.to_dict(orient='records')
 
 
 def align_telemetry_by_distance(
     tel1: pd.DataFrame,
     tel2: pd.DataFrame,
     distance_step: float = 10.0
-) -> tuple:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Align two telemetry datasets by distance for accurate geographical comparison.
     
