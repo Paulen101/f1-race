@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getLapTimes, getAvailableYears, getAvailableTracks, getSessionInfo } from '../services/api';
-import { formatLapTime } from '../utils/helpers';
+import { formatLapTime, getErrorMessage } from '../utils/helpers';
 
 function LapTimesPage() {
   const [years, setYears] = useState([]);
@@ -73,7 +73,7 @@ function LapTimesPage() {
       setLapData(laps.laps || []);
     } catch (error) {
       console.error('Error loading lap data:', error);
-      alert('Error loading data');
+      alert(getErrorMessage(error, 'Error loading data'));
     } finally {
       setLoading(false);
     }

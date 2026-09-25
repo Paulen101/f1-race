@@ -125,3 +125,28 @@ export const groupBy = (array, key) => {
     return result;
   }, {});
 };
+
+/**
+ * Human-readable message for a failed API call. Prefers the backend's
+ * `detail` so users see e.g. "Driver XYZ not found" instead of a generic error.
+ */
+export const getErrorMessage = (error, fallback = 'Something went wrong.') => {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && detail) return detail;
+  // FastAPI validation errors come as a list of {msg, loc}
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail.map((d) => d.msg).join('; ');
+  }
+  if (error?.code === 'ERR_NETWORK') {
+    return 'Cannot reach the backend. Is it running on http://localhost:8000?';
+  }
+  return error?.message || fallback;
+};
+
+/**
+ * Format championship points (whole numbers without decimals)
+ */
+export const formatPoints = (points) => {
+  if (points === null || points === undefined || isNaN(points)) return '--';
+  return Number.isInteger(points) ? `${points}` : points.toFixed(1);
+};

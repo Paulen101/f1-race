@@ -37,8 +37,9 @@ def compare_telemetry(
     """
     try:
         # Get raw telemetry (blocking operation - runs in thread pool)
-        tel1 = f1_service.get_telemetry_sync(year, grand_prix, session_name, driver1, lap_number)
-        tel2 = f1_service.get_telemetry_sync(year, grand_prix, session_name, driver2, lap_number)
+        tel1, tel2 = f1_service.get_telemetry_pair_sync(
+            year, grand_prix, session_name, driver1, driver2, lap_number
+        )
         
         # Align by distance for geographical accuracy
         if align_by_distance:

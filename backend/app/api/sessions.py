@@ -9,7 +9,7 @@ router = APIRouter()
 
 
 @router.get("/schedule/{year}")
-async def get_season_schedule(year: int) -> Dict[str, Any]:
+def get_season_schedule(year: int) -> Dict[str, Any]:
     """Get the race schedule for a specific year using vectorized operations"""
     try:
         schedule = fastf1.get_event_schedule(year)
@@ -33,50 +33,50 @@ async def get_season_schedule(year: int) -> Dict[str, Any]:
 
 
 @router.get("/{year}/{grand_prix}/{session_name}")
-async def get_session_info(year: int, grand_prix: str, session_name: str) -> Dict[str, Any]:
-    """Get information about a specific session with efficient driver identification"""
+def get_session_info(year: int, grand_prix: str, session_name: str) -> Dict[str, Any]:
+    """
+    Get information about a specific session.
+
+    The pages call this to fill their driver dropdowns, so it loads only the
+    session results (driver list), not the full lap timing data.
+    """
     try:
-        session = await f1_service.get_session(year, grand_prix, session_name)
+        session = f1_service.get_session(year, grand_prix, session_name, load_laps=False)
         
-        # Get driver abbreviations - try multiple sources
         drivers = []
+        total_laps = None
+        results = getattr(session, 'results', None)
+        if results is not None and not results.empty:
+            drivers = results['Abbreviation'].dropna().unique().tolist()
+            if 'Laps' in results.columns and results['Laps'].notna().any():
+                total_laps = int(results['Laps'].max())
         
-        # First try: results (most reliable when available)
-        if hasattr(session, 'results') and session.results is not None and not session.results.empty:
-            drivers = session.results['Abbreviation'].dropna().unique().tolist()
-        
-        # Second try: laps dataframe (check if it has Abbreviation column)
-        if not drivers and not session.laps.empty:
-            if 'Abbreviation' in session.laps.columns:
-                drivers = session.laps['Abbreviation'].dropna().unique().tolist()
-            else:
-                # Third try: Use session.get_driver() to map numbers to abbreviations
-                driver_numbers = session.laps['Driver'].unique()
-                for drv_num in driver_numbers:
-                    try:
-                        drv_info = session.get_driver(drv_num)
-                        if drv_info is not None and 'Abbreviation' in drv_info:
-                            drivers.append(drv_info['Abbreviation'])
-                    except:
-                        drivers.append(str(drv_num))
+        # Fallback for sessions without a results table: derive drivers from laps
+        if not drivers:
+            session = f1_service.get_session(year, grand_prix, session_name, load_laps=True)
+            if not session.laps.empty:
+                drivers = session.laps['Driver'].dropna().unique().tolist()
+                total_laps = int(session.laps['LapNumber'].max())
         
         return {
             'year': year,
             'grand_prix': grand_prix,
             'session_name': session_name,
-            'session_date': session.date.isoformat() if hasattr(session, 'date') and session.date else None,
-            'total_laps': len(session.laps),
-            'drivers': sorted(list(set(drivers))) if drivers else []
+            'session_date': session.date.isoformat() if getattr(session, 'date', None) is not None and pd.notna(session.date) else None,
+            'total_laps': total_laps,
+            'drivers': sorted(set(drivers))
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{year}/{grand_prix}/{session_name}/results")
-async def get_session_results(year: int, grand_prix: str, session_name: str) -> Dict[str, Any]:
+def get_session_results(year: int, grand_prix: str, session_name: str) -> Dict[str, Any]:
     """Get session results using vectorized operations"""
     try:
-        session = await f1_service.get_session(year, grand_prix, session_name)
+        session = f1_service.get_session(year, grand_prix, session_name)
         results = session.results
         
         if results is None or results.empty:

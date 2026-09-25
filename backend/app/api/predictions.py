@@ -14,7 +14,7 @@ router = APIRouter()
 
 
 @router.get("/years")
-async def get_available_years() -> Dict[str, List[int]]:
+def get_available_years() -> Dict[str, List[int]]:
     """Get list of available years for predictions"""
     current_year = datetime.now().year
     # F1 data typically available from 2018 onwards with FastF1
@@ -178,11 +178,11 @@ def predict_race_quick(request: PredictionRequest) -> Dict[str, Any]:
 
 
 @router.get("/championship/{year}")
-async def predict_championship(year: int, remaining_races: int = 5) -> Dict[str, Any]:
+def predict_championship(year: int, remaining_races: int = 5) -> Dict[str, Any]:
     """Predict final championship standings"""
     try:
         # Get current standings
-        standings = await f1_service.get_driver_standings(year)
+        standings = f1_service.get_driver_standings(year)
 
         # Predict final standings
         predictions = championship_predictor.predict_final_standings(standings, remaining_races)
