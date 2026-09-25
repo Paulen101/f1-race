@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { exportToCSV } from '../utils/helpers';
 
 function TelemetryPage() {
-  const [year, setYear] = useState(2024);
+  const [year, setYear] = useState('');
   const [grandPrix, setGrandPrix] = useState('');
   const [sessionName, setSessionName] = useState('Race');
   const [driver1, setDriver1] = useState('');
@@ -25,18 +25,21 @@ function TelemetryPage() {
         const data = await getAvailableYears();
         const years = data.years || [];
         setAvailableYears(years);
-        if (years.length > 0 && !year) {
-          setYear(years[0]);
+        if (years.length > 0) {
+          // Years come oldest first; default to the latest season
+          setYear(years[years.length - 1]);
         }
       } catch (error) {
         console.error('Error loading years:', error);
-        // Fallback to recent years if API fails
-        const fallbackYears = [2024, 2023, 2022, 2021, 2020];
+        // Fallback to the last five seasons if the API fails
+        const currentYear = new Date().getFullYear();
+        const fallbackYears = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
         setAvailableYears(fallbackYears);
+        setYear(currentYear);
       }
     };
     loadYears();
-  }, [year]);
+  }, []);
 
   // Load available tracks when year changes
   useEffect(() => {

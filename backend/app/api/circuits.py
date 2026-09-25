@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException
 import fastf1
 import pandas as pd
+from datetime import datetime
 from app.utils.data_utils import assign_stints
 
 router = APIRouter()
@@ -43,9 +44,11 @@ def get_circuit_info(year: int, circuit: str) -> Dict[str, Any]:
 
 
 @router.get("/{circuit}/history")
-def get_circuit_history(circuit: str, start_year: int = 2018, end_year: int = 2024) -> Dict[str, Any]:
+def get_circuit_history(circuit: str, start_year: int = 2018, end_year: Optional[int] = None) -> Dict[str, Any]:
     """Get historical race results for a circuit with optimized loading"""
     try:
+        if end_year is None:
+            end_year = datetime.now().year
         history = []
         
         for year in range(start_year, end_year + 1):
@@ -127,8 +130,19 @@ def get_circuit_statistics(year: int, circuit: str) -> Dict[str, Any]:
             'average_lap_time': float(valid_laps['LapTime'].dt.total_seconds().mean()) if not valid_laps.empty else None,
             'compounds_used': laps['Compound'].dropna().unique().tolist(),
             'total_pit_stops': 0,
-            'safety_car_periods': 0
+            'safety_car_periods': None,
+            'virtual_safety_car_periods': None,
+            'red_flags': None
         }
+        
+        # Track status codes: '4' = SC deployed, '5' = red flag, '6' = VSC deployed.
+        # Each deployment is one status message, so counting them counts periods.
+        track_status = getattr(session, 'track_status', None)
+        if track_status is not None and not track_status.empty and 'Status' in track_status.columns:
+            status = track_status['Status'].astype(str)
+            stats['safety_car_periods'] = int((status == '4').sum())
+            stats['virtual_safety_car_periods'] = int((status == '6').sum())
+            stats['red_flags'] = int((status == '5').sum())
         
         # Fastest lap
         if not valid_laps.empty:
@@ -149,5 +163,7 @@ def get_circuit_statistics(year: int, circuit: str) -> Dict[str, Any]:
             stats['total_pit_stops'] = int(is_pit_stop.sum())
         
         return stats
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

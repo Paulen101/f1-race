@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { getSeasonSchedule } from '../services/api';
 
 function Home() {
-  const [currentYear] = useState(2024);
+  const [currentYear] = useState(new Date().getFullYear());
   const [schedule, setSchedule] = useState([]);
   const [loading, setLoading] = useState(true);
 

@@ -65,7 +65,7 @@ function App() {
 
         <footer className="bg-f1-gray mt-16 py-6">
           <div className="container mx-auto px-4 text-center text-gray-400">
-            <p>&copy; 2024 F1 Analytics Platform. Powered by FastF1 & FastAPI.</p>
+            <p>&copy; {new Date().getFullYear()} F1 Analytics Platform. Powered by FastF1 & FastAPI.</p>
           </div>
         </footer>
       </div>
