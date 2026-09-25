@@ -35,7 +35,7 @@ class FastF1Service:
             session = await self.get_session(year, grand_prix, session_name)
             
             if driver:
-                laps = session.laps.pick_driver(driver)
+                laps = session.laps.pick_drivers(driver)
             else:
                 laps = session.laps
             
@@ -52,7 +52,7 @@ class FastF1Service:
         try:
             # For telemetry we NEED to load it
             session = await self.get_session(year, grand_prix, session_name, load_laps=True, load_telemetry=True)
-            driver_laps = session.laps.pick_driver(driver)
+            driver_laps = session.laps.pick_drivers(driver)
             
             if lap_number:
                 lap = driver_laps[driver_laps['LapNumber'] == lap_number].iloc[0]
@@ -84,7 +84,7 @@ class FastF1Service:
             
             # Try to pick driver - FastF1's pick_driver handles abbreviations automatically
             try:
-                driver_laps = session.laps.pick_driver(driver)
+                driver_laps = session.laps.pick_drivers(driver)
                 print(f"Found driver {driver} using pick_driver, {len(driver_laps)} laps")
             except Exception as e:
                 print(f"pick_driver failed for {driver}: {str(e)}")

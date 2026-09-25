@@ -28,7 +28,7 @@ async def compare_drivers(
         
         for driver in driver_list:
             try:
-                driver_laps = session.laps.pick_driver(driver)
+                driver_laps = session.laps.pick_drivers(driver)
                 
                 if driver_laps.empty:
                     continue

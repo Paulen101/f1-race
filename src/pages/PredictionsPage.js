@@ -74,6 +74,7 @@ function PredictionsPage() {
       return;
     }
 
+    let interval;
     try {
       setLoading(true);
       setPredictions(null);
@@ -81,7 +82,7 @@ function PredictionsPage() {
       setStatus('Initializing prediction engine...');
 
       // Mock progress interval to keep user informed
-      const interval = setInterval(() => {
+      interval = setInterval(() => {
         setProgress(prev => {
           if (prev < 30) {
             setStatus('Fetching 2-year historical data...');
@@ -111,6 +112,7 @@ function PredictionsPage() {
       }, 500);
       
     } catch (error) {
+      clearInterval(interval);
       console.error('Error making prediction:', error);
       alert('Error making prediction: ' + (error.response?.data?.detail || error.message));
       setLoading(false);
@@ -327,7 +329,7 @@ function PredictionsPage() {
               </p>
               <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-400">
                 <div>• Historical Races Analyzed: {predictions.data_info?.historical_races}</div>
-                <div>• Qualifying Data Used: {predictions.data_info?.has_quali ? 'Yes' : 'No'}</div>
+                <div>• Qualifying Data Used: {predictions.data_info?.has_qualifying ? 'Yes' : 'No'}</div>
                 <div>• Data Window: 24 Months</div>
                 <div>• ML Model: Optimized Vector Engine</div>
               </div>
