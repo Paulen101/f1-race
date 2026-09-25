@@ -2,12 +2,13 @@ from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException
 import fastf1
 import pandas as pd
+from app.utils.data_utils import assign_stints
 
 router = APIRouter()
 
 
 @router.get("/{year}/{circuit}/info")
-async def get_circuit_info(year: int, circuit: str) -> Dict[str, Any]:
+def get_circuit_info(year: int, circuit: str) -> Dict[str, Any]:
     """Get circuit information and characteristics efficiently"""
     try:
         # Get a race session to extract circuit info
@@ -42,7 +43,7 @@ async def get_circuit_info(year: int, circuit: str) -> Dict[str, Any]:
 
 
 @router.get("/{circuit}/history")
-async def get_circuit_history(circuit: str, start_year: int = 2018, end_year: int = 2024) -> Dict[str, Any]:
+def get_circuit_history(circuit: str, start_year: int = 2018, end_year: int = 2024) -> Dict[str, Any]:
     """Get historical race results for a circuit with optimized loading"""
     try:
         history = []
@@ -100,7 +101,7 @@ async def get_circuit_history(circuit: str, start_year: int = 2018, end_year: in
 
 
 @router.get("/{year}/{circuit}/statistics")
-async def get_circuit_statistics(year: int, circuit: str) -> Dict[str, Any]:
+def get_circuit_statistics(year: int, circuit: str) -> Dict[str, Any]:
     """Get detailed circuit statistics using vectorized operations"""
     try:
         session = fastf1.get_session(year, circuit, 'Race')
@@ -139,14 +140,12 @@ async def get_circuit_statistics(year: int, circuit: str) -> Dict[str, Any]:
                 'lap_number': int(fastest['LapNumber'])
             }
         
-        # Vectorized pit stop calculation
+        # Pit stops = stint changes per driver (catches same-compound stops too)
         if not laps.empty:
-            # Shift within each driver group
-            laps_sorted = laps.sort_values(['Driver', 'LapNumber'])
-            laps_sorted['PrevCompound'] = laps_sorted.groupby('Driver')['Compound'].shift(1)
-            
-            # Count where Compound != PrevCompound (excluding the very first lap of each driver)
-            is_pit_stop = (laps_sorted['Compound'] != laps_sorted['PrevCompound']) & laps_sorted['PrevCompound'].notna()
+            laps_sorted = laps.sort_values(['Driver', 'LapNumber']).copy()
+            laps_sorted['StintID'] = assign_stints(laps_sorted)
+            prev_stint = laps_sorted.groupby('Driver')['StintID'].shift(1)
+            is_pit_stop = prev_stint.notna() & (laps_sorted['StintID'] != prev_stint)
             stats['total_pit_stops'] = int(is_pit_stop.sum())
         
         return stats

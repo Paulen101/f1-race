@@ -9,7 +9,7 @@ router = APIRouter()
 
 
 @router.get("/schedule/{year}")
-async def get_season_schedule(year: int) -> Dict[str, Any]:
+def get_season_schedule(year: int) -> Dict[str, Any]:
     """Get the race schedule for a specific year using vectorized operations"""
     try:
         schedule = fastf1.get_event_schedule(year)
@@ -33,10 +33,10 @@ async def get_season_schedule(year: int) -> Dict[str, Any]:
 
 
 @router.get("/{year}/{grand_prix}/{session_name}")
-async def get_session_info(year: int, grand_prix: str, session_name: str) -> Dict[str, Any]:
+def get_session_info(year: int, grand_prix: str, session_name: str) -> Dict[str, Any]:
     """Get information about a specific session with efficient driver identification"""
     try:
-        session = await f1_service.get_session(year, grand_prix, session_name)
+        session = f1_service.get_session(year, grand_prix, session_name)
         
         # Get driver abbreviations - try multiple sources
         drivers = []
@@ -73,10 +73,10 @@ async def get_session_info(year: int, grand_prix: str, session_name: str) -> Dic
 
 
 @router.get("/{year}/{grand_prix}/{session_name}/results")
-async def get_session_results(year: int, grand_prix: str, session_name: str) -> Dict[str, Any]:
+def get_session_results(year: int, grand_prix: str, session_name: str) -> Dict[str, Any]:
     """Get session results using vectorized operations"""
     try:
-        session = await f1_service.get_session(year, grand_prix, session_name)
+        session = f1_service.get_session(year, grand_prix, session_name)
         results = session.results
         
         if results is None or results.empty:

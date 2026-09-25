@@ -8,17 +8,17 @@ router = APIRouter()
 
 
 @router.get("/standings/{year}")
-async def get_driver_standings(year: int) -> Dict[str, Any]:
+def get_driver_standings(year: int) -> Dict[str, Any]:
     """Get driver championship standings efficiently"""
     try:
-        standings = await f1_service.get_driver_standings(year)
+        standings = f1_service.get_driver_standings(year)
         return {'year': year, 'standings': standings}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{year}/{driver}/stats")
-async def get_driver_season_stats(year: int, driver: str) -> Dict[str, Any]:
+def get_driver_season_stats(year: int, driver: str) -> Dict[str, Any]:
     """Get comprehensive statistics for a driver in a season with optimized loading"""
     try:
         schedule = fastf1.get_event_schedule(year)
@@ -90,17 +90,13 @@ async def get_driver_season_stats(year: int, driver: str) -> Dict[str, Any]:
                         if res.get('GridPosition') == 1:
                             stats['pole_positions'] += 1
                         
-                        # Check for fastest lap - FastF1 usually has this in results if loaded
-                        # If not, use the laps data we loaded
-                        if hasattr(res, 'FastestLapTime') and pd.notna(res.FastestLapTime):
-                            # Compare with other drivers' fastest laps in the same race
-                            if res.FastestLapTime == race.results['FastestLapTime'].min():
-                                stats['fastest_laps'] += 1
-                        elif not race.laps.empty:
+                        # Fastest lap: FastF1 results have no fastest-lap column, so
+                        # use the laps data. Laps['Driver'] holds the abbreviation.
+                        if not race.laps.empty:
                             valid_laps = race.laps[race.laps['LapTime'].notna()]
                             if not valid_laps.empty:
                                 race_fastest_lap = valid_laps.loc[valid_laps['LapTime'].idxmin()]
-                                if race_fastest_lap['Driver'] == res.get('Driver'):
+                                if race_fastest_lap['Driver'] == res.get('Abbreviation'):
                                     stats['fastest_laps'] += 1
             except Exception as e:
                 print(f"Warning: Error processing {event_name}: {e}")
@@ -115,7 +111,7 @@ async def get_driver_season_stats(year: int, driver: str) -> Dict[str, Any]:
 
 
 @router.get("/{driver}/career")
-async def get_driver_career_stats(driver: str, start_year: int = 2018, end_year: int = 2024) -> Dict[str, Any]:
+def get_driver_career_stats(driver: str, start_year: int = 2018, end_year: int = 2024) -> Dict[str, Any]:
     """Get career statistics for a driver across multiple seasons efficiently"""
     try:
         career_stats = []
@@ -123,7 +119,7 @@ async def get_driver_career_stats(driver: str, start_year: int = 2018, end_year:
         for year in range(start_year, end_year + 1):
             try:
                 # Reuse the optimized season stats function
-                year_stats = await get_driver_season_stats(year, driver)
+                year_stats = get_driver_season_stats(year, driver)
                 if year_stats.get('races', 0) > 0:
                     career_stats.append(year_stats)
             except:

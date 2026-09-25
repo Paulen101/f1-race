@@ -8,7 +8,7 @@ router = APIRouter()
 
 
 @router.get("/drivers/{year}/{grand_prix}/{session_name}")
-async def compare_drivers(
+def compare_drivers(
     year: int,
     grand_prix: str,
     session_name: str,
@@ -22,7 +22,7 @@ async def compare_drivers(
             raise HTTPException(status_code=400, detail="At least 2 drivers required")
         
         # Load session with laps and results
-        session = await f1_service.get_session(year, grand_prix, session_name, load_laps=True)
+        session = f1_service.get_session(year, grand_prix, session_name, load_laps=True)
         
         comparison = []
         
@@ -76,7 +76,7 @@ async def compare_drivers(
 
 
 @router.get("/teammates/{year}/{team}")
-async def compare_teammates(year: int, team: str) -> Dict[str, Any]:
+def compare_teammates(year: int, team: str) -> Dict[str, Any]:
     """Compare teammates across a season with optimized session loading"""
     try:
         schedule = fastf1.get_event_schedule(year)
@@ -157,7 +157,7 @@ async def compare_teammates(year: int, team: str) -> Dict[str, Any]:
 
 
 @router.get("/head-to-head/{year}/{driver1}/{driver2}")
-async def head_to_head_comparison(year: int, driver1: str, driver2: str) -> Dict[str, Any]:
+def head_to_head_comparison(year: int, driver1: str, driver2: str) -> Dict[str, Any]:
     """Detailed head-to-head comparison between two drivers with optimized loading"""
     try:
         schedule = fastf1.get_event_schedule(year)

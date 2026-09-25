@@ -4,12 +4,13 @@ from typing import Optional, List, Dict, Any
 from app.services.fastf1_service import f1_service
 import pandas as pd
 import numpy as np
+from app.utils.data_utils import assign_stints, stint_compound
 
 router = APIRouter()
 
 
 @router.get("/{year}/{grand_prix}/{session_name}")
-async def get_lap_times(
+def get_lap_times(
     year: int,
     grand_prix: str,
     session_name: str,
@@ -17,7 +18,7 @@ async def get_lap_times(
 ) -> Dict[str, Any]:
     """Get lap times for a session or specific driver using vectorized operations"""
     try:
-        laps = await f1_service.get_laps(year, grand_prix, session_name, driver)
+        laps = f1_service.get_laps(year, grand_prix, session_name, driver)
         
         if laps.empty:
             return {'laps': []}
@@ -54,10 +55,10 @@ async def get_lap_times(
 
 
 @router.get("/{year}/{grand_prix}/{session_name}/fastest")
-async def get_fastest_laps(year: int, grand_prix: str, session_name: str) -> Dict[str, Any]:
+def get_fastest_laps(year: int, grand_prix: str, session_name: str) -> Dict[str, Any]:
     """Get fastest lap for each driver in the session using vectorized operations"""
     try:
-        laps = await f1_service.get_laps(year, grand_prix, session_name)
+        laps = f1_service.get_laps(year, grand_prix, session_name)
         
         if laps.empty:
             return {'fastest_laps': []}
@@ -89,7 +90,7 @@ async def get_fastest_laps(year: int, grand_prix: str, session_name: str) -> Dic
 
 
 @router.get("/{year}/{grand_prix}/{session_name}/analysis")
-async def get_lap_time_analysis(
+def get_lap_time_analysis(
     year: int,
     grand_prix: str,
     session_name: str,
@@ -97,7 +98,7 @@ async def get_lap_time_analysis(
 ) -> Dict[str, Any]:
     """Get detailed lap time analysis including pace, consistency, and degradation"""
     try:
-        laps = await f1_service.get_laps(year, grand_prix, session_name)
+        laps = f1_service.get_laps(year, grand_prix, session_name)
         
         if drivers:
             driver_list = [d.strip() for d in drivers.split(',')]
@@ -158,25 +159,25 @@ def _analyze_stints(laps: pd.DataFrame) -> List[Dict[str, Any]]:
     if laps.empty:
         return []
         
-    # Create StintID using vectorized comparison
     laps_copy = laps.copy()
-    laps_copy['StintID'] = (laps_copy['Compound'] != laps_copy['Compound'].shift()).cumsum()
+    laps_copy['StintID'] = assign_stints(laps_copy)
+    laps_copy['StintCompound'] = laps_copy.groupby('StintID')['Compound'].transform(stint_compound)
     
-    # Group by StintID and Compound to aggregate
-    stint_groups = laps_copy.groupby(['StintID', 'Compound'])
+    # Group by stint (dropna=False keeps stints whose compound is unknown)
+    stint_groups = laps_copy.groupby(['StintID', 'StintCompound'], dropna=False, sort=True)
     
     # Calculate aggregations
     stints_data = stint_groups.agg(
         num_laps=('LapNumber', 'count'),
         average_time=('LapTime', lambda x: x.dt.total_seconds().mean() if not x.isna().all() else np.nan),
         fastest_time=('LapTime', lambda x: x.dt.total_seconds().min() if not x.isna().all() else np.nan)
-    ).reset_index()
+    ).reset_index().rename(columns={'StintCompound': 'Compound'})
     
     # Convert to list of dicts
     result = []
     for _, row in stints_data.iterrows():
         result.append({
-            'compound': row['Compound'],
+            'compound': row['Compound'] if pd.notna(row['Compound']) else None,
             'num_laps': int(row['num_laps']),
             'average_time': float(row['average_time']) if pd.notna(row['average_time']) else None,
             'fastest_time': float(row['fastest_time']) if pd.notna(row['fastest_time']) else None
