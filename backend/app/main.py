@@ -1,4 +1,12 @@
 """Main FastAPI application"""
+import os
+import sys
+
+# Allow `python app/main.py` (as documented) in addition to `uvicorn app.main:app`:
+# running the file directly puts backend/app on sys.path instead of backend/.
+if __name__ == "__main__":
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse

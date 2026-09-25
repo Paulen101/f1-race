@@ -30,7 +30,7 @@ def calculate_tyre_age_at_start(
         >>> print(f"Verstappen's tyres were {tyre_age} laps old at lap 25")
     """
     try:
-        driver_laps = session.laps.pick_driver(driver)
+        driver_laps = session.laps.pick_drivers(driver)
         
         if driver_laps.empty or lap_number > len(driver_laps):
             return None
@@ -122,7 +122,7 @@ def calculate_average_pit_stop_duration(
         
         # Iterate through all drivers
         for driver in session.laps['Driver'].unique():
-            driver_laps = session.laps.pick_driver(driver)
+            driver_laps = session.laps.pick_drivers(driver)
             
             # Find pit laps (laps with PitInTime and PitOutTime)
             for idx in range(len(driver_laps)):
