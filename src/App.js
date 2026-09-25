@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, NavLink } from 'react-router-dom';
 import './App.css';
 
 // Pages
@@ -12,39 +12,38 @@ import DriversPage from './pages/DriversPage';
 import CircuitsPage from './pages/CircuitsPage';
 import ComparisonsPage from './pages/ComparisonsPage';
 
+const NAV_LINKS = [
+  { to: '/laptimes', label: 'Lap Times' },
+  { to: '/telemetry', label: 'Telemetry' },
+  { to: '/strategy', label: 'Strategy' },
+  { to: '/predictions', label: 'Predictions' },
+  { to: '/drivers', label: 'Drivers' },
+  { to: '/circuits', label: 'Circuits' },
+  { to: '/comparisons', label: 'Comparisons' },
+];
+
 function App() {
   return (
     <Router>
       <div className="min-h-screen bg-f1-dark text-white">
         <nav className="bg-f1-gray shadow-lg">
           <div className="container mx-auto px-4">
-            <div className="flex items-center justify-between h-16">
-              <Link to="/" className="text-2xl font-bold text-f1-red">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 py-3 md:py-0 md:h-16">
+              <Link to="/" className="text-2xl font-bold text-f1-red shrink-0">
                 F1 Analytics
               </Link>
               
-              <div className="flex space-x-6">
-                <Link to="/laptimes" className="hover:text-f1-red transition">
-                  Lap Times
-                </Link>
-                <Link to="/telemetry" className="hover:text-f1-red transition">
-                  Telemetry
-                </Link>
-                <Link to="/strategy" className="hover:text-f1-red transition">
-                  Strategy
-                </Link>
-                <Link to="/predictions" className="hover:text-f1-red transition">
-                  Predictions
-                </Link>
-                <Link to="/drivers" className="hover:text-f1-red transition">
-                  Drivers
-                </Link>
-                <Link to="/circuits" className="hover:text-f1-red transition">
-                  Circuits
-                </Link>
-                <Link to="/comparisons" className="hover:text-f1-red transition">
-                  Comparisons
-                </Link>
+              {/* Scrolls sideways on narrow screens instead of widening the page */}
+              <div className="flex gap-x-6 overflow-x-auto whitespace-nowrap -mx-4 px-4 md:mx-0 md:px-0 pb-1 md:pb-0">
+                {NAV_LINKS.map(({ to, label }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    className={({ isActive }) => `transition ${isActive ? 'text-f1-red font-semibold' : 'hover:text-f1-red'}`}
+                  >
+                    {label}
+                  </NavLink>
+                ))}
               </div>
             </div>
           </div>

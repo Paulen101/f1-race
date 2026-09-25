@@ -1,109 +1,94 @@
 import React, { useState, useEffect } from 'react';
-import { compareTelemetry, getAvailableYears, getAvailableTracks, getSessionInfo } from '../services/api';
+import { compareTelemetry, getSessionInfo } from '../services/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter, ZAxis } from 'recharts';
-import { exportToCSV } from '../utils/helpers';
+import { exportToCSV, getErrorMessage } from '../utils/helpers';
+import useSeasonSelector from '../hooks/useSeasonSelector';
+import SeasonPicker from '../components/SeasonPicker';
+import { ErrorMessage } from '../components/ui';
 
 function TelemetryPage() {
-  const [year, setYear] = useState('');
-  const [grandPrix, setGrandPrix] = useState('');
+  const season = useSeasonSelector();
+  const { year, grandPrix } = season;
   const [sessionName, setSessionName] = useState('Race');
   const [driver1, setDriver1] = useState('');
   const [driver2, setDriver2] = useState('');
   const [telemetryData, setTelemetryData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   
   // Dropdown options
-  const [availableYears, setAvailableYears] = useState([]);
-  const [availableTracks, setAvailableTracks] = useState([]);
   const [availableDrivers, setAvailableDrivers] = useState([]);
-  const [loadingDropdowns, setLoadingDropdowns] = useState(true);
-
-  // Load available years on mount
-  useEffect(() => {
-    const loadYears = async () => {
-      try {
-        const data = await getAvailableYears();
-        const years = data.years || [];
-        setAvailableYears(years);
-        if (years.length > 0) {
-          // Years come oldest first; default to the latest season
-          setYear(years[years.length - 1]);
-        }
-      } catch (error) {
-        console.error('Error loading years:', error);
-        // Fallback to the last five seasons if the API fails
-        const currentYear = new Date().getFullYear();
-        const fallbackYears = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
-        setAvailableYears(fallbackYears);
-        setYear(currentYear);
-      }
-    };
-    loadYears();
-  }, []);
-
-  // Load available tracks when year changes
-  useEffect(() => {
-    const loadTracks = async () => {
-      if (!year) return;
-      try {
-        const data = await getAvailableTracks(year);
-        const tracks = (data.tracks || []).map(t => t.name);
-        setAvailableTracks(tracks);
-        // Auto-select first track if none selected or current selection not in list
-        if (tracks.length > 0 && (!grandPrix || !tracks.includes(grandPrix))) {
-          setGrandPrix(tracks[0]);
-        }
-      } catch (error) {
-        console.error('Error loading tracks:', error);
-        setAvailableTracks([]);
-      }
-    };
-    loadTracks();
-  }, [year, grandPrix]);
+  const [loadingDropdowns, setLoadingDropdowns] = useState(false);
 
   // Load available drivers when year/track/session changes
   useEffect(() => {
-    const loadDrivers = async () => {
-      if (!year || !grandPrix || !sessionName) return;
-      try {
-        setLoadingDropdowns(true);
-        const sessionData = await getSessionInfo(year, grandPrix, sessionName);
-        setAvailableDrivers(sessionData.drivers || []);
-        setLoadingDropdowns(false);
-      } catch (error) {
-        console.error('Error loading drivers:', error);
+    if (!year || !grandPrix || !sessionName) return undefined;
+    let cancelled = false;
+    setLoadingDropdowns(true);
+    setError('');
+
+    getSessionInfo(year, grandPrix, sessionName)
+      .then((sessionData) => {
+        if (cancelled) return;
+        const drivers = sessionData.drivers || [];
+        setAvailableDrivers(drivers);
+        // Drop picks that didn't take part in the newly selected session
+        setDriver1((d) => (drivers.includes(d) ? d : ''));
+        setDriver2((d) => (drivers.includes(d) ? d : ''));
+      })
+      .catch((err) => {
+        if (cancelled) return;
         setAvailableDrivers([]);
-        setLoadingDropdowns(false);
-      }
+        setDriver1('');
+        setDriver2('');
+        setError(getErrorMessage(err, 'Could not load drivers for this session.'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDropdowns(false);
+      });
+
+    return () => {
+      cancelled = true;
     };
-    loadDrivers();
   }, [year, grandPrix, sessionName]);
 
   const handleLoadTelemetry = async () => {
     if (!grandPrix || !driver1 || !driver2) {
-      alert('Please fill in all fields');
+      setError('Pick a Grand Prix and two drivers.');
+      return;
+    }
+    if (driver1 === driver2) {
+      setError('Pick two different drivers.');
       return;
     }
 
     try {
       setLoading(true);
+      setError('');
+      setTelemetryData(null);
       const data = await compareTelemetry(year, grandPrix, sessionName, driver1, driver2);
-      setTelemetryData(data);
-    } catch (error) {
-      console.error('Error loading telemetry:', error);
-      alert('Error loading telemetry data. Please check your inputs.');
+      setTelemetryData({ ...data, year, grandPrix, sessionName });
+    } catch (err) {
+      setError(getErrorMessage(err, 'Error loading telemetry data.'));
     } finally {
       setLoading(false);
     }
   };
 
+  // Names of the drivers the loaded data belongs to (the dropdowns may have changed since)
+  const loadedDriver1 = telemetryData?.driver1?.driver;
+  const loadedDriver2 = telemetryData?.driver2?.driver;
+
   const handleExportCSV = () => {
     if (!telemetryData) return;
     
-    const tel1 = telemetryData.driver1.telemetry.map(p => ({ ...p, driver: driver1 }));
-    const tel2 = telemetryData.driver2.telemetry.map(p => ({ ...p, driver: driver2 }));
+    const tel1 = telemetryData.driver1.telemetry.map(p => ({ ...p, driver: loadedDriver1 }));
+    const tel2 = telemetryData.driver2.telemetry.map(p => ({ ...p, driver: loadedDriver2 }));
     
-    exportToCSV([...tel1, ...tel2], `telemetry_${year}_${grandPrix}_${driver1}_${driver2}`);
+    exportToCSV(
+      [...tel1, ...tel2],
+      `telemetry_${telemetryData.year}_${telemetryData.grandPrix}_${telemetryData.sessionName}_${loadedDriver1}_${loadedDriver2}`
+    );
   };
 
   // Prepare chart data
@@ -115,34 +100,34 @@ function TelemetryPage() {
     
     const speedData = tel1.map((point, idx) => ({
       distance: point.Distance || point.distance,
-      [driver1]: point.Speed || point.speed,
-      [driver2]: tel2[idx]?.Speed || tel2[idx]?.speed
+      [loadedDriver1]: point.Speed || point.speed,
+      [loadedDriver2]: tel2[idx]?.Speed || tel2[idx]?.speed
     }));
     
     const throttleData = tel1.map((point, idx) => ({
       distance: point.Distance || point.distance,
-      [driver1]: point.Throttle || point.throttle,
-      [driver2]: tel2[idx]?.Throttle || tel2[idx]?.throttle
+      [loadedDriver1]: point.Throttle || point.throttle,
+      [loadedDriver2]: tel2[idx]?.Throttle || tel2[idx]?.throttle
     }));
     
     const brakeData = tel1.map((point, idx) => ({
       distance: point.Distance || point.distance,
-      [driver1]: point.Brake || point.brake,
-      [driver2]: tel2[idx]?.Brake || tel2[idx]?.brake
+      [loadedDriver1]: point.Brake || point.brake,
+      [loadedDriver2]: tel2[idx]?.Brake || tel2[idx]?.brake
     }));
 
     const track1 = tel1.map(point => ({
       x: point.x,
       y: point.y,
       speed: point.speed,
-      driver: driver1
+      driver: loadedDriver1
     })).filter(p => p.x !== undefined && p.y !== undefined);
 
     const track2 = tel2.map(point => ({
       x: point.x,
       y: point.y,
       speed: point.speed,
-      driver: driver2
+      driver: loadedDriver2
     })).filter(p => p.x !== undefined && p.y !== undefined);
     
     return { speed: speedData, throttle: throttleData, brake: brakeData, track1, track2 };
@@ -157,32 +142,7 @@ function TelemetryPage() {
       {/* Controls */}
       <div className="bg-f1-gray rounded-lg p-6 mb-6">
         <div className="grid md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-sm mb-2">Year</label>
-            <select
-              value={year}
-              onChange={(e) => setYear(parseInt(e.target.value))}
-              className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none"
-            >
-              {availableYears.map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
-          
-          <div>
-            <label className="block text-sm mb-2">Grand Prix</label>
-            <select
-              value={grandPrix}
-              onChange={(e) => setGrandPrix(e.target.value)}
-              className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none"
-            >
-              <option value="">Select a track...</option>
-              {availableTracks.map(track => (
-                <option key={track} value={track}>{track}</option>
-              ))}
-            </select>
-          </div>
+          <SeasonPicker season={season} />
           
           <div>
             <label className="block text-sm mb-2">Session</label>
@@ -230,14 +190,31 @@ function TelemetryPage() {
           </div>
         </div>
         
-        <button
-          onClick={handleLoadTelemetry}
-          disabled={loading || loadingDropdowns}
-          className="bg-f1-red text-white px-6 py-2 rounded hover:bg-red-700 disabled:bg-gray-600 transition"
-        >
-          {loading ? 'Loading Telemetry...' : loadingDropdowns ? 'Loading Options...' : 'Compare Telemetry'}
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={handleLoadTelemetry}
+            disabled={loading || loadingDropdowns || !driver1 || !driver2}
+            className="bg-f1-red text-white px-6 py-2 rounded hover:bg-red-700 disabled:bg-gray-600 transition"
+          >
+            {loading ? 'Loading Telemetry...' : loadingDropdowns ? 'Loading Options...' : 'Compare Telemetry'}
+          </button>
+          {telemetryData && (
+            <button
+              onClick={handleExportCSV}
+              className="border border-gray-500 text-white px-4 py-2 rounded hover:border-f1-red transition"
+            >
+              Export CSV
+            </button>
+          )}
+        </div>
       </div>
+
+      <ErrorMessage message={season.error || error} />
+      {telemetryData && (
+        <p className="text-sm text-gray-400 mb-4">
+          Showing {loadedDriver1} vs {loadedDriver2} · {telemetryData.grandPrix} {telemetryData.year} {telemetryData.sessionName} · fastest laps
+        </p>
+      )}
 
       {/* Delta Analysis */}
       {telemetryData?.delta_analysis && (
@@ -299,8 +276,8 @@ function TelemetryPage() {
                   }}
                 />
                 <Legend />
-                <Scatter name={driver1} data={chartData.track1} fill="#E10600" line={{ stroke: '#E10600', strokeWidth: 2 }} shape="circle" />
-                <Scatter name={driver2} data={chartData.track2} fill="#00A000" line={{ stroke: '#00A000', strokeWidth: 2 }} shape="circle" />
+                <Scatter name={loadedDriver1} data={chartData.track1} fill="#E10600" line={{ stroke: '#E10600', strokeWidth: 2 }} shape="circle" />
+                <Scatter name={loadedDriver2} data={chartData.track2} fill="#00A000" line={{ stroke: '#00A000', strokeWidth: 2 }} shape="circle" />
               </ScatterChart>
             </ResponsiveContainer>
           </div>
@@ -317,8 +294,8 @@ function TelemetryPage() {
                 <YAxis stroke="#fff" label={{ value: 'km/h', angle: -90, position: 'insideLeft' }} />
                 <Tooltip contentStyle={{ backgroundColor: '#38383F', border: 'none' }} />
                 <Legend />
-                <Line type="monotone" dataKey={driver1} stroke="#E10600" dot={false} strokeWidth={2} />
-                <Line type="monotone" dataKey={driver2} stroke="#00A000" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey={loadedDriver1} stroke="#E10600" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey={loadedDriver2} stroke="#00A000" dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -337,8 +314,8 @@ function TelemetryPage() {
                 <YAxis stroke="#fff" label={{ value: '%', angle: -90, position: 'insideLeft' }} />
                 <Tooltip contentStyle={{ backgroundColor: '#38383F', border: 'none' }} />
                 <Legend />
-                <Line type="monotone" dataKey={driver1} stroke="#E10600" dot={false} strokeWidth={2} />
-                <Line type="monotone" dataKey={driver2} stroke="#00A000" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey={loadedDriver1} stroke="#E10600" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey={loadedDriver2} stroke="#00A000" dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -355,8 +332,8 @@ function TelemetryPage() {
                 <YAxis stroke="#fff" label={{ value: 'Brake', angle: -90, position: 'insideLeft' }} />
                 <Tooltip contentStyle={{ backgroundColor: '#38383F', border: 'none' }} />
                 <Legend />
-                <Line type="monotone" dataKey={driver1} stroke="#E10600" dot={false} strokeWidth={2} />
-                <Line type="monotone" dataKey={driver2} stroke="#00A000" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey={loadedDriver1} stroke="#E10600" dot={false} strokeWidth={2} />
+                <Line type="monotone" dataKey={loadedDriver2} stroke="#00A000" dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           </div>
