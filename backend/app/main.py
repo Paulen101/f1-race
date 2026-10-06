@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 import fastf1
 from app.config import settings
 from app.utils.cache_setup import setup_cache
+from app.utils.json_response import SafeJSONResponse
 from app.api import (
     sessions,
     telemetry,
@@ -33,6 +34,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url=f"{settings.API_PREFIX}/docs",
     redoc_url=f"{settings.API_PREFIX}/redoc",
+    default_response_class=SafeJSONResponse,
 )
 
 # CORS middleware

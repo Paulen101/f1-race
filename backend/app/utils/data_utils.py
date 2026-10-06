@@ -1,7 +1,7 @@
 """Utility functions for data processing"""
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 def format_lap_time(seconds: float) -> str:
@@ -66,6 +66,44 @@ def normalize_data(data: List[float]) -> List[float]:
     return [(x - min_val) / (max_val - min_val) for x in data]
 
 
+def assign_stints(laps_df: pd.DataFrame) -> pd.Series:
+    """
+    Return the tyre stint number of every lap, aligned to ``laps_df``'s index.
+
+    Uses FastF1's ``Stint`` column. If it is missing, a new stint starts when
+    the tyre age drops or the compound changes. Comparing compounds alone is
+    wrong: a pit stop onto the same compound (hard -> hard) is missed, and a
+    lap with an unknown compound (NaN != NaN) splits a stint in two.
+    """
+    if laps_df.empty:
+        return pd.Series(dtype=float, index=laps_df.index)
+
+    if 'Stint' in laps_df.columns and laps_df['Stint'].notna().any():
+        return laps_df.groupby('Driver')['Stint'].transform(lambda s: s.ffill().bfill())
+
+    laps = laps_df.sort_values(['Driver', 'LapNumber'])
+    by_driver = laps['Driver']
+    compound = laps.groupby('Driver')['Compound'].ffill()
+    prev_compound = compound.groupby(by_driver).shift()
+    new_stint = compound.notna() & prev_compound.notna() & (compound != prev_compound)
+
+    if 'TyreLife' in laps.columns:
+        prev_tyre_life = laps.groupby('Driver')['TyreLife'].shift()
+        new_stint |= laps['TyreLife'] < prev_tyre_life
+
+    stints = new_stint.astype(int).groupby(by_driver).cumsum() + 1
+    return stints.reindex(laps_df.index)
+
+
+def stint_compound(compounds: pd.Series) -> Optional[str]:
+    """Most common known compound in a stint, or None."""
+    known = compounds.dropna()
+    known = known[known != 'UNKNOWN']
+    if known.empty:
+        return None
+    return str(known.mode().iloc[0])
+
+
 def aggregate_by_stint(laps_df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     Aggregate lap data by tire stint using vectorized operations.
@@ -79,28 +117,16 @@ def aggregate_by_stint(laps_df: pd.DataFrame) -> List[Dict[str, Any]]:
     if laps_df.empty:
         return []
     
-    # Identify stint changes (where compound changes)
-    # We create a stint ID by checking where the compound is different from the previous row
-    # and taking the cumulative sum.
     laps = laps_df.copy()
-    laps['StintID'] = (laps['Compound'] != laps['Compound'].shift()).cumsum()
+    laps['StintID'] = assign_stints(laps)
     
-    # Group by StintID and Compound to aggregate
-    stint_groups = laps.groupby(['StintID', 'Compound'])
-    
-    # Calculate aggregations
-    stints_data = stint_groups.agg(
-        num_laps=('LapNumber', 'count'),
-        average_time=('LapTime', lambda x: x.mean() if not x.isna().all() else np.nan)
-    ).reset_index()
-    
-    # Convert to list of dicts
     result = []
-    for _, row in stints_data.iterrows():
+    for _, stint in laps.groupby(['Driver', 'StintID'], sort=True):
+        average_time = stint['LapTime'].dt.total_seconds().mean()
         result.append({
-            'compound': row['Compound'],
-            'num_laps': int(row['num_laps']),
-            'average_time': float(row['average_time']) if pd.notna(row['average_time']) else None
+            'compound': stint_compound(stint['Compound']),
+            'num_laps': int(len(stint)),
+            'average_time': float(average_time) if pd.notna(average_time) else None
         })
         
     return result

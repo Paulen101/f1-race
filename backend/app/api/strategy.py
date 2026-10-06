@@ -1,6 +1,7 @@
 """Strategy analysis endpoints"""
 from fastapi import APIRouter, HTTPException
 from app.services import f1_service
+from app.utils.data_utils import assign_stints, stint_compound
 import pandas as pd
 import numpy as np
 
@@ -8,20 +9,20 @@ router = APIRouter()
 
 
 @router.get("/{year}/{grand_prix}/pitstops")
-async def get_pit_stops(year: int, grand_prix: str):
+def get_pit_stops(year: int, grand_prix: str):
     """Get pit stop analysis for a race"""
     try:
-        pit_stops = await f1_service.get_pit_stops(year, grand_prix)
+        pit_stops = f1_service.get_pit_stops(year, grand_prix)
         return {'pit_stops': pit_stops}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{year}/{grand_prix}/strategy")
-async def get_race_strategy(year: int, grand_prix: str):
+def get_race_strategy(year: int, grand_prix: str):
     """Get comprehensive strategy analysis for a race"""
     try:
-        session = await f1_service.get_session(year, grand_prix, 'Race')
+        session = f1_service.get_session(year, grand_prix, 'Race')
         laps = session.laps
         
         strategies = []
@@ -32,9 +33,9 @@ async def get_race_strategy(year: int, grand_prix: str):
             # Analyze stints
             stints = _analyze_driver_stints(driver_laps)
             
-            # Get pit stop info
+            # Every stint after the first began with a pit stop
             pit_stops = []
-            for i, stint in enumerate(stints[1:], 1):  # Skip first stint
+            for i, stint in enumerate(stints[1:], 1):
                 pit_stops.append({
                     'lap': stint['start_lap'],
                     'from_compound': stints[i-1]['compound'],
@@ -55,40 +56,30 @@ async def get_race_strategy(year: int, grand_prix: str):
 
 
 @router.get("/{year}/{grand_prix}/tire-degradation")
-async def get_tire_degradation(year: int, grand_prix: str, driver: str):
+def get_tire_degradation(year: int, grand_prix: str, driver: str):
     """Analyze tire degradation for a specific driver"""
     try:
-        laps = await f1_service.get_laps(year, grand_prix, 'Race', driver)
+        laps = f1_service.get_laps(year, grand_prix, 'Race', driver)
         
         degradation_data = []
-        current_compound = None
-        stint_data = []
+        if laps.empty:
+            return {'driver': driver, 'degradation': degradation_data}
         
-        for _, lap in laps.iterrows():
-            compound = lap.get('Compound')
-            tire_life = lap.get('TyreLife')
-            lap_time = lap.get('LapTime')
+        laps = laps.sort_values('LapNumber').copy()
+        laps['StintID'] = assign_stints(laps)
+        
+        for _, stint_laps in laps.groupby('StintID', sort=True):
+            compound = stint_compound(stint_laps['Compound'])
+            if compound is None:
+                continue
             
-            if pd.notna(lap_time):
-                if compound != current_compound and stint_data:
-                    # Process previous stint
-                    deg = _calculate_degradation(stint_data)
-                    if deg:
-                        degradation_data.append(deg)
-                    stint_data = []
-                    current_compound = compound
-                
-                if compound is None:
-                    continue
-                    
-                stint_data.append({
-                    'tire_life': int(tire_life) if pd.notna(tire_life) else 0,
-                    'lap_time': lap_time.total_seconds(),
-                    'compound': compound
-                })
-        
-        # Process final stint
-        if stint_data:
+            timed = stint_laps[stint_laps['LapTime'].notna()]
+            stint_data = [{
+                'tire_life': int(lap['TyreLife']) if pd.notna(lap.get('TyreLife')) else 0,
+                'lap_time': lap['LapTime'].total_seconds(),
+                'compound': compound
+            } for _, lap in timed.iterrows()]
+            
             deg = _calculate_degradation(stint_data)
             if deg:
                 degradation_data.append(deg)
@@ -100,48 +91,27 @@ async def get_tire_degradation(year: int, grand_prix: str, driver: str):
 
 def _analyze_driver_stints(driver_laps):
     """Analyze tire stints for a driver"""
+    if driver_laps.empty:
+        return []
+    
+    driver_laps = driver_laps.sort_values('LapNumber').copy()
+    driver_laps['StintID'] = assign_stints(driver_laps)
+    
     stints = []
-    current_compound = None
-    stint_laps = []
-    
-    for _, lap in driver_laps.iterrows():
-        compound = lap.get('Compound')
+    for _, stint in driver_laps.groupby('StintID', sort=True):
+        stint_laps = [lap for _, lap in stint.iterrows()]
+        valid_times = [l['LapTime'].total_seconds() for l in stint_laps
+                       if pd.notna(l.get('LapTime'))]
         
-        if compound != current_compound and current_compound is not None:
-            # Save previous stint
-            if stint_laps:
-                valid_times = [l['LapTime'].total_seconds() for l in stint_laps 
-                              if pd.notna(l.get('LapTime'))]
-                
-                if valid_times:
-                    stints.append({
-                        'compound': current_compound,
-                        'start_lap': stint_laps[0]['LapNumber'],
-                        'end_lap': stint_laps[-1]['LapNumber'],
-                        'num_laps': len(stint_laps),
-                        'fastest_lap': float(min(valid_times)),
-                        'average_lap': float(np.mean(valid_times)),
-                        'degradation_rate': _calculate_stint_degradation(stint_laps)
-                    })
-            stint_laps = []
-        
-        current_compound = compound
-        stint_laps.append(lap)
-    
-    # Add final stint
-    if stint_laps:
-        valid_times = [l['LapTime'].total_seconds() for l in stint_laps 
-                      if pd.notna(l.get('LapTime'))]
-        if valid_times:
-            stints.append({
-                'compound': current_compound,
-                'start_lap': stint_laps[0]['LapNumber'],
-                'end_lap': stint_laps[-1]['LapNumber'],
-                'num_laps': len(stint_laps),
-                'fastest_lap': float(min(valid_times)),
-                'average_lap': float(np.mean(valid_times)),
-                'degradation_rate': _calculate_stint_degradation(stint_laps)
-            })
+        stints.append({
+            'compound': stint_compound(stint['Compound']),
+            'start_lap': int(stint['LapNumber'].min()),
+            'end_lap': int(stint['LapNumber'].max()),
+            'num_laps': len(stint_laps),
+            'fastest_lap': float(min(valid_times)) if valid_times else None,
+            'average_lap': float(np.mean(valid_times)) if valid_times else None,
+            'degradation_rate': _calculate_stint_degradation(stint_laps)
+        })
     
     return stints
 

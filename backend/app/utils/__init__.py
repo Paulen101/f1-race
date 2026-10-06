@@ -5,7 +5,9 @@ from app.utils.data_utils import (
     calculate_consistency,
     detect_outliers,
     normalize_data,
-    aggregate_by_stint
+    aggregate_by_stint,
+    assign_stints,
+    stint_compound
 )
 
 __all__ = [
@@ -14,5 +16,7 @@ __all__ = [
     "calculate_consistency",
     "detect_outliers",
     "normalize_data",
-    "aggregate_by_stint"
+    "aggregate_by_stint",
+    "assign_stints",
+    "stint_compound"
 ]

@@ -140,7 +140,7 @@ export const getDriverSeasonStats = async (year, driver) => {
   return response.data;
 };
 
-export const getDriverCareerStats = async (driver, startYear = 2018, endYear = 2024) => {
+export const getDriverCareerStats = async (driver, startYear = 2018, endYear = new Date().getFullYear()) => {
   const response = await api.get(`/drivers/${driver}/career`, {
     params: { start_year: startYear, end_year: endYear }
   });
@@ -153,7 +153,7 @@ export const getCircuitInfo = async (year, circuit) => {
   return response.data;
 };
 
-export const getCircuitHistory = async (circuit, startYear = 2018, endYear = 2024) => {
+export const getCircuitHistory = async (circuit, startYear = 2018, endYear = new Date().getFullYear()) => {
   const response = await api.get(`/circuits/${circuit}/history`, {
     params: { start_year: startYear, end_year: endYear }
   });
