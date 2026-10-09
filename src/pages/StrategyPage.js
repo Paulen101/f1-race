@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { getRaceStrategy, getPitStops, getSessionResults, getTireDegradation } from '../services/api';
+import { FiLayers } from 'react-icons/fi';
 import { getErrorMessage, formatLapTime, getTireColor } from '../utils/helpers';
 import useSeasonSelector from '../hooks/useSeasonSelector';
 import SeasonPicker from '../components/SeasonPicker';
+import PageHeader from '../components/PageHeader';
 import {
-  Card, Button, Field, Select, ErrorMessage, LoadingNote, EmptyNote, DataTable,
+  Card, Button, Field, Select, ErrorMessage, LoadingNote, EmptyNote, DataTable, CompoundBadge,
 } from '../components/ui';
 
 // Dark text on the light compounds, white on the rest
@@ -16,19 +18,23 @@ const COMPOUNDS = ['SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET'];
 function StintTimeline({ strategies, totalLaps }) {
   return (
     <div>
-      <div className="flex flex-wrap gap-4 mb-4 text-xs">
+      <div className="flex flex-wrap gap-4 mb-5 text-xs text-gray-400">
         {COMPOUNDS.map((compound) => (
-          <span key={compound} className="flex items-center gap-1">
-            <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: getTireColor(compound) }} />
+          <span key={compound} className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-full ring-2 ring-black/50" style={{ backgroundColor: getTireColor(compound) }} />
             {compound}
           </span>
         ))}
       </div>
-      <div className="space-y-1">
-        {strategies.map((strategy) => (
-          <div key={strategy.driver} className="flex items-center gap-2">
-            <div className="w-12 text-sm font-bold shrink-0">{strategy.driver}</div>
-            <div className="flex-1 flex h-6 bg-f1-dark rounded overflow-hidden">
+      <div className="space-y-1.5">
+        {strategies.map((strategy, rowIdx) => (
+          <div
+            key={strategy.driver}
+            className="flex items-center gap-2 animate-fade-up"
+            style={{ animationDelay: `${rowIdx * 30}ms` }}
+          >
+            <div className="w-12 shrink-0 font-mono text-sm font-bold">{strategy.driver}</div>
+            <div className="flex h-6 flex-1 overflow-hidden rounded-md bg-black/40">
               {strategy.stints.map((stint, idx) => {
                 // Position each stint on the race-lap axis so retirements show as a short bar
                 const offset = idx === 0 ? (stint.start_lap - 1) / totalLaps : 0;
@@ -37,7 +43,7 @@ function StintTimeline({ strategies, totalLaps }) {
                   <div
                     key={idx}
                     title={`${stint.compound || 'Unknown'} · laps ${stint.start_lap}–${stint.end_lap}`}
-                    className="h-full text-[10px] font-bold flex items-center justify-center border-r border-f1-dark overflow-hidden"
+                    className="flex h-full items-center justify-center overflow-hidden rounded-[3px] font-mono text-[10px] font-bold shadow-[inset_-2px_0_0_rgba(0,0,0,0.6)] transition-opacity hover:opacity-80"
                     style={{
                       marginLeft: `${offset * 100}%`,
                       width: `${width * 100}%`,
@@ -50,13 +56,13 @@ function StintTimeline({ strategies, totalLaps }) {
                 );
               })}
             </div>
-            <div className="w-14 text-xs text-gray-400 text-right shrink-0">
+            <div className="w-14 shrink-0 text-right font-mono text-xs text-gray-400">
               {strategy.num_stops} {strategy.num_stops === 1 ? 'stop' : 'stops'}
             </div>
           </div>
         ))}
       </div>
-      <div className="flex justify-between text-xs text-gray-500 mt-2 ml-14 mr-16">
+      <div className="mt-2 ml-14 mr-16 flex justify-between font-mono text-xs text-gray-500">
         <span>Lap 1</span>
         <span>Lap {totalLaps}</span>
       </div>
@@ -139,17 +145,7 @@ function StrategyPage() {
     };
   }, [race, degDriver]);
 
-  const compoundBadge = (compound) =>
-    compound ? (
-      <span
-        className="px-2 py-0.5 rounded text-xs font-bold"
-        style={{ backgroundColor: getTireColor(compound), color: tyreTextColor(compound) }}
-      >
-        {compound}
-      </span>
-    ) : (
-      <span className="text-gray-500">?</span>
-    );
+  const compoundBadge = (compound) => <CompoundBadge compound={compound} />;
 
   const pitColumns = [
     { key: 'lap', label: 'Lap', align: 'right' },
@@ -187,11 +183,16 @@ function StrategyPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6 text-f1-red">Race Strategy</h1>
+      <PageHeader
+        icon={FiLayers}
+        eyebrow="Pit wall"
+        title="Race Strategy"
+        description="Tyre stints for the whole field, every pit stop and how quickly each compound fell away."
+      />
 
       <Card>
         <ErrorMessage message={season.error} />
-        <div className="grid md:grid-cols-3 gap-4 mb-4">
+        <div className="grid gap-4 md:grid-cols-3 mb-5">
           <SeasonPicker season={season} />
         </div>
         <Button onClick={handleLoad} disabled={loading || !year || !grandPrix}>
@@ -204,7 +205,7 @@ function StrategyPage() {
 
       {race && (
         <>
-          <Card title={`Tyre Stints · ${race.grandPrix} ${race.year}`}>
+          <Card title="Tyre Stints" eyebrow={`${race.grandPrix} ${race.year} · ${race.totalLaps} laps`}>
             {race.strategies.length === 0 ? (
               <EmptyNote>No stint data available for this race.</EmptyNote>
             ) : (
@@ -217,7 +218,7 @@ function StrategyPage() {
               {race.pitStops.length === 0 ? (
                 <EmptyNote>No pit stops recorded.</EmptyNote>
               ) : (
-                <div className="max-h-[480px] overflow-y-auto">
+                <div className="max-h-[480px] overflow-y-auto rounded-xl">
                   <DataTable columns={pitColumns} rows={race.pitStops} rowKey={(row) => `${row.driver}-${row.lap}`} />
                 </div>
               )}

@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { getCircuitInfo, getCircuitStatistics, getCircuitHistory } from '../services/api';
-import { getErrorMessage, formatLapTime, getTireColor } from '../utils/helpers';
+import { FiMap, FiMapPin } from 'react-icons/fi';
+import { getErrorMessage, formatLapTime } from '../utils/helpers';
 import useSeasonSelector from '../hooks/useSeasonSelector';
 import SeasonPicker from '../components/SeasonPicker';
+import PageHeader from '../components/PageHeader';
 import {
-  Card, Button, SecondaryButton, ErrorMessage, LoadingNote, EmptyNote, StatTile, DataTable,
+  Card, Button, SecondaryButton, ErrorMessage, LoadingNote, EmptyNote, StatTile, DataTable, CompoundBadge,
 } from '../components/ui';
 
 const countOrNA = (value) => (value === null || value === undefined ? 'n/a' : value);
@@ -61,7 +63,7 @@ function CircuitsPage() {
 
   const historyColumns = [
     { key: 'year', label: 'Year', className: 'font-bold' },
-    { key: 'winner', label: 'Winner', render: (row) => row.winner || '--' },
+    { key: 'winner', label: 'Winner', render: (row) => <span className="font-mono font-bold text-yellow-400">{row.winner || '--'}</span> },
     { key: 'podium', label: 'Podium', render: (row) => (row.podium || []).join(' · ') },
     { key: 'pole_position', label: 'Pole', render: (row) => row.pole_position || '--' },
     {
@@ -75,11 +77,16 @@ function CircuitsPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6 text-f1-red">Circuit Analysis</h1>
+      <PageHeader
+        icon={FiMap}
+        eyebrow="Circuits"
+        title="Circuit Analysis"
+        description="Race stats for any Grand Prix: lap times, pit stops, safety cars and every winner since 2018."
+      />
 
       <Card>
         <ErrorMessage message={season.error} />
-        <div className="grid md:grid-cols-3 gap-4 mb-4">
+        <div className="grid gap-4 md:grid-cols-3 mb-5">
           <SeasonPicker season={season} />
         </div>
         <Button onClick={handleLoad} disabled={loading || !year || !grandPrix}>
@@ -91,14 +98,14 @@ function CircuitsPage() {
       {loading && <LoadingNote>Loading race data… the first load of a race can take a minute.</LoadingNote>}
 
       {info && (
-        <Card title={info.name}>
-          <p className="text-gray-300 mb-4">
+        <Card title={info.name} eyebrow={info.circuit_name || 'Circuit'}>
+          <p className="mb-5 flex flex-wrap items-center gap-2 text-gray-300">
+            <FiMapPin className="text-f1-red" aria-hidden="true" />
             {[info.location, info.country].filter(Boolean).join(', ')}
-            {info.date && ` · ${new Date(info.date).toLocaleDateString()}`}
+            {info.date && <span className="text-gray-500">· {new Date(info.date).toLocaleDateString()}</span>}
           </p>
-          {info.circuit_name && <p className="text-sm text-gray-400 mb-4">{info.circuit_name}</p>}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatTile label="Race laps" value={info.num_laps} />
+            <StatTile label="Race laps" value={info.num_laps} accent />
             <StatTile
               label="Fastest race lap"
               value={info.session_fastest_lap ? formatLapTime(info.session_fastest_lap.time) : '--'}
@@ -131,15 +138,9 @@ function CircuitsPage() {
             />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-gray-400">Compounds used:</span>
+            <span className="eyebrow mr-1">Compounds used</span>
             {(stats.compounds_used || []).map((compound) => (
-              <span
-                key={compound}
-                className="px-2 py-1 rounded text-xs font-bold text-black"
-                style={{ backgroundColor: getTireColor(compound) }}
-              >
-                {compound}
-              </span>
+              <CompoundBadge key={compound} compound={compound} />
             ))}
           </div>
         </Card>
@@ -147,7 +148,8 @@ function CircuitsPage() {
 
       {loaded && !loading && (info || stats) && (
         <Card
-          title={`${loaded.grandPrix} · History`}
+          title="History"
+          eyebrow={loaded.grandPrix}
           actions={
             !history && (
               <SecondaryButton onClick={handleLoadHistory} disabled={loadingHistory}>

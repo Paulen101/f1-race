@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { compareTelemetry, getSessionInfo } from '../services/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter, ZAxis } from 'recharts';
+import { FiActivity, FiDownload } from 'react-icons/fi';
 import { exportToCSV, getErrorMessage } from '../utils/helpers';
+import { DRIVER_COLORS, axisLabel, axisProps, gridProps, legendProps, tooltipProps } from '../utils/chartTheme';
 import useSeasonSelector from '../hooks/useSeasonSelector';
 import SeasonPicker from '../components/SeasonPicker';
-import { ErrorMessage } from '../components/ui';
+import PageHeader from '../components/PageHeader';
+import {
+  Card, Button, SecondaryButton, Field, Select, ErrorMessage, LoadingNote, StatTile,
+} from '../components/ui';
 
 function TelemetryPage() {
   const season = useSeasonSelector();
@@ -135,208 +140,152 @@ function TelemetryPage() {
 
   const chartData = prepareChartData();
 
+  const delta = telemetryData?.delta_analysis;
+  const fixed = (v) => (v == null || Number.isNaN(v) ? null : v.toFixed(1));
+  const [color1, color2] = DRIVER_COLORS;
+
+  const lineChart = (data, unit, height = 300) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ top: 5, right: 10, bottom: 15, left: 0 }}>
+        <CartesianGrid {...gridProps} />
+        <XAxis dataKey="distance" {...axisProps} type="number" domain={['dataMin', 'dataMax']} tickFormatter={(v) => `${Math.round(v)}`} label={axisLabel('Distance (m)')} />
+        <YAxis {...axisProps} width={45} label={axisLabel(unit, 'y')} />
+        <Tooltip {...tooltipProps} labelFormatter={(v) => `${Math.round(v)} m`} />
+        <Legend {...legendProps} />
+        <Line type="monotone" dataKey={loadedDriver1} stroke={color1} dot={false} strokeWidth={2} isAnimationActive={false} />
+        <Line type="monotone" dataKey={loadedDriver2} stroke={color2} dot={false} strokeWidth={2} isAnimationActive={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6 text-f1-red">Telemetry Comparison</h1>
-      
-      {/* Controls */}
-      <div className="bg-f1-gray rounded-lg p-6 mb-6">
-        <div className="grid md:grid-cols-3 gap-4 mb-4">
+      <PageHeader
+        icon={FiActivity}
+        eyebrow="Telemetry"
+        title="Telemetry Comparison"
+        description="Overlay two drivers' fastest laps: speed, throttle and braking through every metre of the lap."
+      />
+
+      <Card>
+        <ErrorMessage message={season.error} />
+        <div className="grid gap-4 md:grid-cols-3 mb-4">
           <SeasonPicker season={season} />
-          
-          <div>
-            <label className="block text-sm mb-2">Session</label>
-            <select
-              value={sessionName}
-              onChange={(e) => setSessionName(e.target.value)}
-              className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none"
-            >
-              <option>Race</option>
-              <option>Qualifying</option>
-              <option>Sprint</option>
-            </select>
-          </div>
+          <Field label="Session">
+            <Select value={sessionName} onChange={setSessionName}>
+              <option value="Race">Race</option>
+              <option value="Qualifying">Qualifying</option>
+              <option value="Sprint">Sprint</option>
+            </Select>
+          </Field>
         </div>
-        
-        <div className="grid md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm mb-2">Driver 1</label>
-            <select
-              value={driver1}
-              onChange={(e) => setDriver1(e.target.value)}
-              disabled={loadingDropdowns}
-              className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none disabled:opacity-50"
-            >
-              <option value="">Select driver 1...</option>
-              {availableDrivers.map(driver => (
+
+        <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr] md:items-end mb-5">
+          <Field label="Driver 1">
+            <Select value={driver1} onChange={setDriver1} disabled={loadingDropdowns}>
+              <option value="">Select driver 1…</option>
+              {availableDrivers.map((driver) => (
                 <option key={driver} value={driver}>{driver}</option>
               ))}
-            </select>
-          </div>
-          
-          <div>
-            <label className="block text-sm mb-2">Driver 2</label>
-            <select
-              value={driver2}
-              onChange={(e) => setDriver2(e.target.value)}
-              disabled={loadingDropdowns}
-              className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none disabled:opacity-50"
-            >
-              <option value="">Select driver 2...</option>
-              {availableDrivers.map(driver => (
+            </Select>
+          </Field>
+          <div className="hidden pb-2.5 text-center font-black italic text-gray-500 md:block" aria-hidden="true">VS</div>
+          <Field label="Driver 2">
+            <Select value={driver2} onChange={setDriver2} disabled={loadingDropdowns}>
+              <option value="">Select driver 2…</option>
+              {availableDrivers.map((driver) => (
                 <option key={driver} value={driver}>{driver}</option>
               ))}
-            </select>
-          </div>
+            </Select>
+          </Field>
         </div>
-        
+
         <div className="flex flex-wrap gap-3">
-          <button
-            onClick={handleLoadTelemetry}
-            disabled={loading || loadingDropdowns || !driver1 || !driver2}
-            className="bg-f1-red text-white px-6 py-2 rounded hover:bg-red-700 disabled:bg-gray-600 transition"
-          >
-            {loading ? 'Loading Telemetry...' : loadingDropdowns ? 'Loading Options...' : 'Compare Telemetry'}
-          </button>
+          <Button onClick={handleLoadTelemetry} disabled={loading || loadingDropdowns || !driver1 || !driver2}>
+            {loading ? 'Loading telemetry…' : loadingDropdowns ? 'Loading options…' : 'Compare Telemetry'}
+          </Button>
           {telemetryData && (
-            <button
-              onClick={handleExportCSV}
-              className="border border-gray-500 text-white px-4 py-2 rounded hover:border-f1-red transition"
-            >
-              Export CSV
-            </button>
+            <SecondaryButton onClick={handleExportCSV}>
+              <FiDownload aria-hidden="true" /> Export CSV
+            </SecondaryButton>
           )}
         </div>
-      </div>
+      </Card>
 
-      <ErrorMessage message={season.error || error} />
+      <ErrorMessage message={error} />
+      {loading && <LoadingNote>Loading telemetry… the first load of a session can take a minute.</LoadingNote>}
+
       {telemetryData && (
-        <p className="text-sm text-gray-400 mb-4">
-          Showing {loadedDriver1} vs {loadedDriver2} · {telemetryData.grandPrix} {telemetryData.year} {telemetryData.sessionName} · fastest laps
-        </p>
-      )}
-
-      {/* Delta Analysis */}
-      {telemetryData?.delta_analysis && (
-        <div className="bg-f1-gray rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">Delta Analysis</h2>
-          <div className="grid md:grid-cols-4 gap-4">
-            <div className="bg-f1-dark rounded p-4">
-              <div className="text-sm text-gray-400">Max Speed Difference</div>
-              <div className="text-2xl font-bold">
-                {telemetryData.delta_analysis.speed?.max_diff?.toFixed(1) || '--'} km/h
-              </div>
-            </div>
-            <div className="bg-f1-dark rounded p-4">
-              <div className="text-sm text-gray-400">Avg Speed Difference</div>
-              <div className="text-2xl font-bold">
-                {telemetryData.delta_analysis.speed?.avg_diff?.toFixed(1) || '--'} km/h
-              </div>
-            </div>
-            <div className="bg-f1-dark rounded p-4">
-              <div className="text-sm text-gray-400">Throttle Usage Diff</div>
-              <div className="text-2xl font-bold">
-                {telemetryData.delta_analysis.throttle?.diff?.toFixed(1) || '--'}%
-              </div>
-            </div>
-            <div className="bg-f1-dark rounded p-4">
-              <div className="text-sm text-gray-400">Brake Usage Diff</div>
-              <div className="text-2xl font-bold">
-                {telemetryData.delta_analysis.brake?.diff?.toFixed(1) || '--'}%
-              </div>
-            </div>
-          </div>
+        <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm animate-fade-up">
+          <span className="flex items-center gap-2 font-mono font-bold">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color1 }} />{loadedDriver1}
+          </span>
+          <span className="text-gray-500">vs</span>
+          <span className="flex items-center gap-2 font-mono font-bold">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color2 }} />{loadedDriver2}
+          </span>
+          <span className="text-gray-400">
+            · {telemetryData.grandPrix} {telemetryData.year} {telemetryData.sessionName} · fastest laps
+          </span>
         </div>
       )}
 
-      <div className="grid lg:grid-cols-2 gap-6 mb-6">
-        {/* Track Map */}
+      {delta && (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-6 animate-fade-up">
+          <StatTile label="Max speed difference" value={fixed(delta.speed?.max_diff)} unit="km/h" accent />
+          <StatTile label="Avg speed difference" value={fixed(delta.speed?.avg_diff)} unit="km/h" />
+          <StatTile label="Throttle usage diff" value={fixed(delta.throttle?.diff)} unit="%" />
+          <StatTile label="Brake usage diff" value={fixed(delta.brake?.diff)} unit="%" />
+        </div>
+      )}
+
+      <div className="grid gap-x-6 lg:grid-cols-2">
         {chartData.track1.length > 0 && (
-          <div className="bg-f1-gray rounded-lg p-6">
-            <h2 className="text-xl font-bold mb-4">Track Map</h2>
+          <Card title="Track Map" eyebrow="Racing line">
             <ResponsiveContainer width="100%" height={400}>
-              <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                <XAxis type="number" dataKey="x" name="X" hide />
-                <YAxis type="number" dataKey="y" name="Y" hide />
-                <ZAxis type="number" dataKey="speed" range={[20, 20]} />
-                <Tooltip 
-                  cursor={{ strokeDasharray: '3 3' }}
+              <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                <XAxis type="number" dataKey="x" name="X" hide domain={['dataMin', 'dataMax']} />
+                <YAxis type="number" dataKey="y" name="Y" hide domain={['dataMin', 'dataMax']} />
+                <ZAxis type="number" dataKey="speed" range={[10, 10]} />
+                <Tooltip
+                  cursor={false}
                   content={({ active, payload }) => {
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;
                       return (
-                        <div className="bg-f1-dark p-2 border border-gray-600 rounded">
-                          <p className="text-f1-red font-bold">{data.driver}</p>
-                          <p>Speed: {data.speed} km/h</p>
+                        <div style={tooltipProps.contentStyle} className="px-3 py-2">
+                          <p className="font-mono font-bold">{data.driver}</p>
+                          <p className="text-gray-300">{data.speed} km/h</p>
                         </div>
                       );
                     }
                     return null;
                   }}
                 />
-                <Legend />
-                <Scatter name={loadedDriver1} data={chartData.track1} fill="#E10600" line={{ stroke: '#E10600', strokeWidth: 2 }} shape="circle" />
-                <Scatter name={loadedDriver2} data={chartData.track2} fill="#00A000" line={{ stroke: '#00A000', strokeWidth: 2 }} shape="circle" />
+                <Legend {...legendProps} />
+                <Scatter name={loadedDriver1} data={chartData.track1} fill={color1} line={{ stroke: color1, strokeWidth: 3 }} shape="circle" isAnimationActive={false} />
+                <Scatter name={loadedDriver2} data={chartData.track2} fill={color2} line={{ stroke: color2, strokeWidth: 1.5, strokeDasharray: '4 3' }} shape="circle" isAnimationActive={false} />
               </ScatterChart>
             </ResponsiveContainer>
-          </div>
+          </Card>
         )}
 
-        {/* Speed Chart */}
         {chartData.speed.length > 0 && (
-          <div className="bg-f1-gray rounded-lg p-6">
-            <h2 className="text-xl font-bold mb-4">Speed Comparison</h2>
-            <ResponsiveContainer width="100%" height={400}>
-              <LineChart data={chartData.speed}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                <XAxis dataKey="distance" stroke="#fff" label={{ value: 'Distance (m)', position: 'insideBottom', offset: -5 }} />
-                <YAxis stroke="#fff" label={{ value: 'km/h', angle: -90, position: 'insideLeft' }} />
-                <Tooltip contentStyle={{ backgroundColor: '#38383F', border: 'none' }} />
-                <Legend />
-                <Line type="monotone" dataKey={loadedDriver1} stroke="#E10600" dot={false} strokeWidth={2} />
-                <Line type="monotone" dataKey={loadedDriver2} stroke="#00A000" dot={false} strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <Card title="Speed" eyebrow="km/h over the lap">
+            {lineChart(chartData.speed, 'km/h', 400)}
+          </Card>
         )}
-      </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Throttle Chart */}
         {chartData.throttle.length > 0 && (
-          <div className="bg-f1-gray rounded-lg p-6">
-            <h2 className="text-xl font-bold mb-4">Throttle Application</h2>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData.throttle}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                <XAxis dataKey="distance" stroke="#fff" label={{ value: 'Distance (m)', position: 'insideBottom', offset: -5 }} />
-                <YAxis stroke="#fff" label={{ value: '%', angle: -90, position: 'insideLeft' }} />
-                <Tooltip contentStyle={{ backgroundColor: '#38383F', border: 'none' }} />
-                <Legend />
-                <Line type="monotone" dataKey={loadedDriver1} stroke="#E10600" dot={false} strokeWidth={2} />
-                <Line type="monotone" dataKey={loadedDriver2} stroke="#00A000" dot={false} strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <Card title="Throttle Application" eyebrow="Pedal %">
+            {lineChart(chartData.throttle, '%')}
+          </Card>
         )}
 
-        {/* Brake Chart */}
         {chartData.brake.length > 0 && (
-          <div className="bg-f1-gray rounded-lg p-6">
-            <h2 className="text-xl font-bold mb-4">Brake Application</h2>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData.brake}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                <XAxis dataKey="distance" stroke="#fff" label={{ value: 'Distance (m)', position: 'insideBottom', offset: -5 }} />
-                <YAxis stroke="#fff" label={{ value: 'Brake', angle: -90, position: 'insideLeft' }} />
-                <Tooltip contentStyle={{ backgroundColor: '#38383F', border: 'none' }} />
-                <Legend />
-                <Line type="monotone" dataKey={loadedDriver1} stroke="#E10600" dot={false} strokeWidth={2} />
-                <Line type="monotone" dataKey={loadedDriver2} stroke="#00A000" dot={false} strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <Card title="Brake Application" eyebrow="On / off">
+            {lineChart(chartData.brake, 'Brake')}
+          </Card>
         )}
       </div>
     </div>

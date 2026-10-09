@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getDriverStandings, getDriverSeasonStats, getDriverCareerStats } from '../services/api';
+import { FiUsers } from 'react-icons/fi';
 import { getErrorMessage, formatPoints } from '../utils/helpers';
+import { axisProps, gridProps, tooltipProps } from '../utils/chartTheme';
 import useSeasonSelector from '../hooks/useSeasonSelector';
 import SeasonPicker from '../components/SeasonPicker';
+import PageHeader from '../components/PageHeader';
 import {
   Card, SecondaryButton, ErrorMessage, LoadingNote, EmptyNote, StatTile, DataTable,
 } from '../components/ui';
@@ -102,19 +105,27 @@ function DriversPage() {
   };
 
   const standingsColumns = [
-    { key: 'pos', label: 'Pos', render: (row) => standings.indexOf(row) + 1 },
+    {
+      key: 'pos',
+      label: 'Pos',
+      render: (row) => {
+        const pos = standings.indexOf(row) + 1;
+        const medal = ['text-yellow-400', 'text-gray-300', 'text-orange-400'][pos - 1];
+        return <span className={`font-mono font-bold ${medal || 'text-gray-500'}`}>{pos}</span>;
+      },
+    },
     {
       key: 'driver',
       label: 'Driver',
       render: (row) => (
         <span>
-          <span className="font-bold">{row.driver}</span>
+          <span className="font-mono font-bold">{row.driver}</span>
           <span className="text-gray-400 ml-2 hidden sm:inline">{row.full_name}</span>
         </span>
       ),
     },
-    { key: 'team', label: 'Team', className: 'text-gray-300' },
-    { key: 'points', label: 'Points', align: 'right', render: (row) => formatPoints(row.points) },
+    { key: 'team', label: 'Team', className: 'text-gray-400' },
+    { key: 'points', label: 'Points', align: 'right', render: (row) => <span className="font-bold text-white">{formatPoints(row.points)}</span> },
     { key: 'wins', label: 'Wins', align: 'right' },
     { key: 'podiums', label: 'Podiums', align: 'right' },
     { key: 'races_completed', label: 'Races', align: 'right' },
@@ -132,17 +143,22 @@ function DriversPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6 text-f1-red">Driver Analysis</h1>
+      <PageHeader
+        icon={FiUsers}
+        eyebrow="Championship"
+        title="Driver Analysis"
+        description="The drivers' championship, each driver's season in numbers and their career since 2018."
+      />
 
       <Card>
         <ErrorMessage message={season.error} />
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid gap-4 md:grid-cols-3">
           <SeasonPicker season={season} showGrandPrix={false} />
         </div>
       </Card>
 
       <div className="grid lg:grid-cols-5 gap-6">
-        <Card title={`${year || ''} Drivers' Standings`} className="lg:col-span-3">
+        <Card title="Drivers' Standings" eyebrow={year ? `${year} season` : undefined} className="lg:col-span-3">
           <ErrorMessage message={standingsError} />
           {loadingStandings && (
             <LoadingNote>Loading standings… the first load of a season can take a minute.</LoadingNote>
@@ -165,14 +181,18 @@ function DriversPage() {
         </Card>
 
         <div className="lg:col-span-2 min-w-0">
-          <Card title={selectedDriver ? `${selectedDriver.full_name} · ${year}` : 'Driver Details'}>
+          <Card
+            title={selectedDriver ? selectedDriver.full_name : 'Driver Details'}
+            eyebrow={selectedDriver ? `${selectedDriver.team} · ${year}` : undefined}
+            className="lg:sticky lg:top-24"
+          >
             {!selectedDriver && <EmptyNote>Select a driver from the standings.</EmptyNote>}
             <ErrorMessage message={statsError} />
             {loadingStats && <LoadingNote>Loading season stats…</LoadingNote>}
             {seasonStats && (
               <>
                 <div className="grid grid-cols-2 gap-3 mb-4">
-                  <StatTile label="Points" value={formatPoints(seasonStats.points)} />
+                  <StatTile label="Points" value={formatPoints(seasonStats.points)} accent />
                   <StatTile label="Races" value={seasonStats.races} />
                   <StatTile label="Wins" value={seasonStats.wins} />
                   <StatTile label="Podiums" value={seasonStats.podiums} />
@@ -201,29 +221,36 @@ function DriversPage() {
       <ErrorMessage message={careerError} />
       {loadingCareer && <LoadingNote>Loading every season since 2018… this can take a few minutes the first time.</LoadingNote>}
       {career && (
-        <Card title={`${selectedDriver?.full_name || career.driver} · Career since 2018`}>
+        <Card title={selectedDriver?.full_name || career.driver} eyebrow="Career since 2018">
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
             <StatTile label="Seasons" value={career.years} />
             <StatTile label="Races" value={career.total_races} />
             <StatTile label="Wins" value={career.total_wins} />
             <StatTile label="Podiums" value={career.total_podiums} />
             <StatTile label="Poles" value={formatCount(career.total_poles)} />
-            <StatTile label="Points" value={formatPoints(career.total_points)} />
+            <StatTile label="Points" value={formatPoints(career.total_points)} accent />
           </div>
 
           <div className="grid lg:grid-cols-2 gap-6">
             <div>
-              <h3 className="font-semibold mb-2">Points per season</h3>
+              <h3 className="eyebrow mb-3">Points per season</h3>
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={career.by_season}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#444" vertical={false} />
-                  <XAxis dataKey="year" stroke="#aaa" />
-                  <YAxis stroke="#aaa" />
+                  <defs>
+                    <linearGradient id="pointsBar" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#FF2A1F" />
+                      <stop offset="100%" stopColor="#E10600" stopOpacity={0.35} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid {...gridProps} vertical={false} />
+                  <XAxis dataKey="year" {...axisProps} />
+                  <YAxis {...axisProps} width={40} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#15151E', border: '1px solid #38383F' }}
+                    {...tooltipProps}
+                    cursor={{ fill: 'rgba(255, 255, 255, 0.04)' }}
                     formatter={(value) => [formatPoints(value), 'Points']}
                   />
-                  <Bar dataKey="points" fill="#E10600" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="points" fill="url(#pointsBar)" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

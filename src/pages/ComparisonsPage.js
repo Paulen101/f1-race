@@ -3,14 +3,15 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import {
   getAvailableDrivers, getHeadToHead, compareTeammates, compareDrivers, getSessionInfo, getSessionResults,
 } from '../services/api';
+import { FiBarChart2 } from 'react-icons/fi';
 import { getErrorMessage, formatLapTime, formatPoints } from '../utils/helpers';
+import { DRIVER_COLORS, axisProps, gridProps, legendProps, tooltipProps } from '../utils/chartTheme';
 import useSeasonSelector from '../hooks/useSeasonSelector';
 import SeasonPicker from '../components/SeasonPicker';
+import PageHeader from '../components/PageHeader';
 import {
-  Card, Button, Field, Select, ErrorMessage, LoadingNote, EmptyNote, StatTile, DataTable, Tabs,
+  Card, Button, Field, Select, ErrorMessage, LoadingNote, EmptyNote, StatTile, DataTable, Tabs, Chip,
 } from '../components/ui';
-
-const DRIVER_COLORS = ['#E10600', '#00A000', '#3B82F6', '#F59E0B', '#A855F7'];
 const MAX_SESSION_DRIVERS = 5;
 
 const TABS = [
@@ -71,7 +72,7 @@ function HeadToHead({ year, drivers }) {
   return (
     <>
       <Card>
-        <div className="grid md:grid-cols-3 gap-4 mb-4">
+        <div className="grid gap-4 md:grid-cols-3 mb-5">
           <Field label="Driver 1">
             <Select value={driver1} onChange={setDriver1} disabled={drivers.length === 0}>
               {drivers.map((d) => (
@@ -97,14 +98,14 @@ function HeadToHead({ year, drivers }) {
       {loading && <LoadingNote>Loading every race of the season…</LoadingNote>}
 
       {result && (
-        <Card title={`${result.driver1} vs ${result.driver2} · ${result.year}`}>
+        <Card title={`${result.driver1} vs ${result.driver2}`} eyebrow={`${result.year} season`}>
           {result.races.length === 0 ? (
             <EmptyNote>These drivers didn't race each other this season.</EmptyNote>
           ) : (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                <StatTile label={`${result.driver1} ahead`} value={summary.driver1_wins} sub={`of ${result.races.length} races`} />
-                <StatTile label={`${result.driver2} ahead`} value={summary.driver2_wins} sub={`of ${result.races.length} races`} />
+                <StatTile label={`${result.driver1} ahead`} value={summary.driver1_wins} sub={`of ${result.races.length} races`} accent={summary.driver1_wins > summary.driver2_wins} />
+                <StatTile label={`${result.driver2} ahead`} value={summary.driver2_wins} sub={`of ${result.races.length} races`} accent={summary.driver2_wins > summary.driver1_wins} />
                 <StatTile
                   label="Race points"
                   value={`${formatPoints(summary.driver1_points)} – ${formatPoints(summary.driver2_points)}`}
@@ -117,20 +118,20 @@ function HeadToHead({ year, drivers }) {
               </div>
               <div className="grid lg:grid-cols-2 gap-6">
                 <div>
-                  <h3 className="font-semibold mb-2">Finishing position by race</h3>
+                  <h3 className="eyebrow mb-3">Finishing position by race</h3>
                   <ResponsiveContainer width="100%" height={300}>
                     <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                      <XAxis dataKey="race" stroke="#aaa" tick={{ fontSize: 11 }} interval={0} angle={-40} textAnchor="end" height={70} />
-                      <YAxis stroke="#aaa" reversed domain={[1, 20]} allowDecimals={false} />
-                      <Tooltip contentStyle={{ backgroundColor: '#15151E', border: '1px solid #38383F' }} formatter={(v) => `P${v}`} />
-                      <Legend />
-                      <Line type="monotone" dataKey={result.driver1} stroke={DRIVER_COLORS[0]} strokeWidth={2} connectNulls />
-                      <Line type="monotone" dataKey={result.driver2} stroke={DRIVER_COLORS[1]} strokeWidth={2} connectNulls />
+                      <CartesianGrid {...gridProps} />
+                      <XAxis dataKey="race" {...axisProps} interval={0} angle={-40} textAnchor="end" height={70} />
+                      <YAxis {...axisProps} reversed domain={[1, 20]} allowDecimals={false} width={30} />
+                      <Tooltip {...tooltipProps} formatter={(v) => `P${v}`} />
+                      <Legend {...legendProps} />
+                      <Line type="monotone" dataKey={result.driver1} stroke={DRIVER_COLORS[0]} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+                      <Line type="monotone" dataKey={result.driver2} stroke={DRIVER_COLORS[1]} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="max-h-[340px] overflow-y-auto">
+                <div className="max-h-[340px] overflow-y-auto rounded-xl">
                   <DataTable columns={columns} rows={result.races} rowKey={(r) => r.grand_prix} />
                 </div>
               </div>
@@ -192,7 +193,7 @@ function Teammates({ year, latestRace }) {
 
   const rows = [...(result?.comparison || [])].sort((a, b) => b.points - a.points);
   const columns = [
-    { key: 'driver', label: 'Driver', render: (r) => (<span><span className="font-bold">{r.driver}</span> <span className="text-gray-400">{r.name}</span></span>) },
+    { key: 'driver', label: 'Driver', render: (r) => (<span><span className="font-mono font-bold">{r.driver}</span> <span className="text-gray-400">{r.name}</span></span>) },
     { key: 'races', label: 'Races', align: 'right' },
     { key: 'head_to_head_wins', label: 'Ahead of teammate', align: 'right' },
     { key: 'points', label: 'Race points', align: 'right', render: (r) => formatPoints(r.points) },
@@ -204,7 +205,7 @@ function Teammates({ year, latestRace }) {
   return (
     <>
       <Card>
-        <div className="grid md:grid-cols-3 gap-4 mb-4">
+        <div className="grid gap-4 md:grid-cols-3 mb-5">
           <Field label="Team">
             <Select value={team} onChange={setTeam} disabled={loadingTeams || teams.length === 0}>
               {loadingTeams && <option value="">Loading teams...</option>}
@@ -221,7 +222,7 @@ function Teammates({ year, latestRace }) {
       <ErrorMessage message={error} />
       {loading && <LoadingNote>Loading every race of the season…</LoadingNote>}
       {result && (
-        <Card title={`${result.team} · ${result.year}`}>
+        <Card title={result.team} eyebrow={`${result.year} season`}>
           {rows.length === 0 ? (
             <EmptyNote>No results for this team.</EmptyNote>
           ) : (
@@ -306,11 +307,11 @@ function SessionPace({ season }) {
   const sectorCell = (key) => (r) => {
     const value = r.sectors?.[key];
     if (value == null) return '--';
-    return <span className={value === best(key) ? 'text-purple-400 font-bold' : ''}>{value.toFixed(3)}</span>;
+    return <span className={value === best(key) ? 'text-f1-purple font-bold' : ''}>{value.toFixed(3)}</span>;
   };
   const columns = [
-    { key: 'driver', label: 'Driver', className: 'font-bold' },
-    { key: 'fastest_lap', label: 'Fastest', align: 'right', render: (r) => formatLapTime(r.fastest_lap) },
+    { key: 'driver', label: 'Driver', className: 'font-mono font-bold' },
+    { key: 'fastest_lap', label: 'Fastest', align: 'right', render: (r) => <span className={rows.length && r === rows[0] ? 'font-bold text-f1-purple' : ''}>{formatLapTime(r.fastest_lap)}</span> },
     { key: 'gap', label: 'Gap', align: 'right', render: (r) => (rows.length && r !== rows[0] ? `+${(r.fastest_lap - rows[0].fastest_lap).toFixed(3)}` : '--') },
     { key: 'median_lap', label: 'Median lap', align: 'right', render: (r) => formatLapTime(r.median_lap) },
     { key: 's1', label: 'Best S1', align: 'right', render: sectorCell('sector1_best') },
@@ -324,7 +325,7 @@ function SessionPace({ season }) {
     <>
       <Card>
         <ErrorMessage message={season.error} />
-        <div className="grid md:grid-cols-3 gap-4 mb-4">
+        <div className="grid gap-4 md:grid-cols-3 mb-5">
           <SeasonPicker season={season} />
           <Field label="Session">
             <Select value={sessionName} onChange={setSessionName}>
@@ -335,27 +336,20 @@ function SessionPace({ season }) {
           </Field>
         </div>
 
-        <div className="mb-4">
-          <div className="text-sm font-semibold mb-2">
-            Drivers <span className="text-gray-400 font-normal">(pick 2–{MAX_SESSION_DRIVERS})</span>
+        <div className="mb-5">
+          <div className="eyebrow mb-2">
+            Drivers <span className="normal-case tracking-normal text-gray-500">(pick 2–{MAX_SESSION_DRIVERS}, {selected.length} selected)</span>
           </div>
           {loadingDrivers && <LoadingNote>Loading drivers…</LoadingNote>}
           {!loadingDrivers && available.length === 0 && <EmptyNote>No drivers found for this session.</EmptyNote>}
           <div className="flex flex-wrap gap-2">
             {!loadingDrivers &&
               available.map((code) => {
-                const active = selected.includes(code);
+                const idx = selected.indexOf(code);
                 return (
-                  <button
-                    key={code}
-                    onClick={() => toggleDriver(code)}
-                    aria-pressed={active}
-                    className={`px-3 py-1 rounded text-sm font-bold border transition ${
-                      active ? 'bg-f1-red border-f1-red' : 'border-gray-600 text-gray-300 hover:border-f1-red'
-                    }`}
-                  >
+                  <Chip key={code} active={idx !== -1} onClick={() => toggleDriver(code)}>
                     {code}
-                  </button>
+                  </Chip>
                 );
               })}
           </div>
@@ -369,7 +363,7 @@ function SessionPace({ season }) {
       <ErrorMessage message={error} />
       {loading && <LoadingNote>Loading lap data… the first load of a session can take a minute.</LoadingNote>}
       {result && (
-        <Card title={`${result.grandPrix} ${result.year} · ${result.sessionName}`}>
+        <Card title="Session Pace" eyebrow={`${result.grandPrix} ${result.year} · ${result.sessionName}`}>
           {rows.length === 0 ? (
             <EmptyNote>No timed laps for these drivers.</EmptyNote>
           ) : (
@@ -415,14 +409,19 @@ function ComparisonsPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6 text-f1-red">Driver Comparisons</h1>
+      <PageHeader
+        icon={FiBarChart2}
+        eyebrow="Head to head"
+        title="Driver Comparisons"
+        description="Settle the arguments: season head-to-heads, teammate battles and raw pace in a single session."
+      />
 
-      <Tabs tabs={TABS} active={tab} onChange={setTab} />
+      <Tabs tabs={TABS} active={tab} onChange={setTab} id="comparisons" />
 
       {tab !== 'session' && (
         <Card>
           <ErrorMessage message={season.error || driversError} />
-          <div className="grid md:grid-cols-3 gap-4">
+          <div className="grid gap-4 md:grid-cols-3">
             <SeasonPicker season={season} showGrandPrix={false} />
           </div>
         </Card>

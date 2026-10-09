@@ -1,6 +1,7 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, NavLink } from 'react-router-dom';
-import './App.css';
+import React, { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link, NavLink, useLocation } from 'react-router-dom';
+import { motion, MotionConfig } from 'motion/react';
+import { FiActivity, FiBarChart2, FiClock, FiCpu, FiLayers, FiMap, FiUsers } from 'react-icons/fi';
 
 // Pages
 import Home from './pages/Home';
@@ -12,63 +13,127 @@ import DriversPage from './pages/DriversPage';
 import CircuitsPage from './pages/CircuitsPage';
 import ComparisonsPage from './pages/ComparisonsPage';
 
-const NAV_LINKS = [
-  { to: '/laptimes', label: 'Lap Times' },
-  { to: '/telemetry', label: 'Telemetry' },
-  { to: '/strategy', label: 'Strategy' },
-  { to: '/predictions', label: 'Predictions' },
-  { to: '/drivers', label: 'Drivers' },
-  { to: '/circuits', label: 'Circuits' },
-  { to: '/comparisons', label: 'Comparisons' },
+export const NAV_LINKS = [
+  { to: '/laptimes', label: 'Lap Times', icon: FiClock },
+  { to: '/telemetry', label: 'Telemetry', icon: FiActivity },
+  { to: '/strategy', label: 'Strategy', icon: FiLayers },
+  { to: '/predictions', label: 'Predictions', icon: FiCpu },
+  { to: '/drivers', label: 'Drivers', icon: FiUsers },
+  { to: '/circuits', label: 'Circuits', icon: FiMap },
+  { to: '/comparisons', label: 'Comparisons', icon: FiBarChart2 },
 ];
+
+function Logo() {
+  return (
+    <Link to="/" className="group flex shrink-0 items-center gap-2.5" aria-label="F1 Analytics home">
+      <span className="flex items-center gap-[3px]" aria-hidden="true">
+        <span className="h-5 w-1.5 -skew-x-[25deg] rounded-sm bg-f1-red transition-transform group-hover:-translate-x-0.5" />
+        <span className="h-5 w-1.5 -skew-x-[25deg] rounded-sm bg-f1-red/70" />
+        <span className="h-5 w-1.5 -skew-x-[25deg] rounded-sm bg-f1-red/40 transition-transform group-hover:translate-x-0.5" />
+      </span>
+      <span className="text-lg font-black italic leading-none tracking-tight">
+        F1<span className="ml-1.5 font-semibold not-italic tracking-[0.2em] text-gray-300 text-xs align-middle">ANALYTICS</span>
+      </span>
+    </Link>
+  );
+}
+
+function NavBar() {
+  return (
+    <header className="sticky top-0 z-40 border-b border-white/[0.06] bg-f1-dark/75 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-3 sm:px-6 lg:h-16 lg:flex-row lg:items-center lg:justify-between lg:py-0">
+        <Logo />
+        {/* Scrolls sideways on narrow screens instead of widening the page */}
+        <nav className="-mx-4 overflow-x-auto px-4 lg:mx-0 lg:px-0" aria-label="Main">
+          <ul className="flex w-max gap-1">
+            {NAV_LINKS.map(({ to, label, icon: Icon }) => (
+              <li key={to}>
+                <NavLink
+                  to={to}
+                  className={({ isActive }) =>
+                    `relative flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-semibold transition-colors ${
+                      isActive ? 'text-white' : 'text-gray-400 hover:text-white'
+                    }`
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      {isActive && (
+                        <motion.span
+                          layoutId="nav-active"
+                          className="absolute inset-0 rounded-full border border-f1-red/40 bg-f1-red/15"
+                          transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                        />
+                      )}
+                      <Icon className={`relative ${isActive ? 'text-f1-red-bright' : ''}`} aria-hidden="true" />
+                      <span className="relative">{label}</span>
+                    </>
+                  )}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="mt-20 border-t border-white/[0.06]">
+      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-8 text-sm text-gray-500 sm:flex-row sm:px-6">
+        <Logo />
+        <p>&copy; {new Date().getFullYear()} F1 Analytics Platform · Powered by FastF1 &amp; FastAPI</p>
+      </div>
+    </footer>
+  );
+}
+
+/** Each route starts at the top and fades in. */
+function AnimatedRoutes() {
+  const location = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
+
+  const page = (element) => <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 md:py-12">{element}</div>;
+
+  return (
+    <motion.div
+      key={location.pathname}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: 'easeOut' }}
+    >
+      <Routes location={location}>
+        <Route path="/" element={<Home />} />
+        <Route path="/laptimes" element={page(<LapTimesPage />)} />
+        <Route path="/telemetry" element={page(<TelemetryPage />)} />
+        <Route path="/strategy" element={page(<StrategyPage />)} />
+        <Route path="/predictions" element={page(<PredictionsPage />)} />
+        <Route path="/drivers" element={page(<DriversPage />)} />
+        <Route path="/circuits" element={page(<CircuitsPage />)} />
+        <Route path="/comparisons" element={page(<ComparisonsPage />)} />
+      </Routes>
+    </motion.div>
+  );
+}
 
 function App() {
   return (
-    <Router>
-      <div className="min-h-screen bg-f1-dark text-white">
-        <nav className="bg-f1-gray shadow-lg">
-          <div className="container mx-auto px-4">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 py-3 md:py-0 md:h-16">
-              <Link to="/" className="text-2xl font-bold text-f1-red shrink-0">
-                F1 Analytics
-              </Link>
-              
-              {/* Scrolls sideways on narrow screens instead of widening the page */}
-              <div className="flex gap-x-6 overflow-x-auto whitespace-nowrap -mx-4 px-4 md:mx-0 md:px-0 pb-1 md:pb-0">
-                {NAV_LINKS.map(({ to, label }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    className={({ isActive }) => `transition ${isActive ? 'text-f1-red font-semibold' : 'hover:text-f1-red'}`}
-                  >
-                    {label}
-                  </NavLink>
-                ))}
-              </div>
-            </div>
-          </div>
-        </nav>
-
-        <main className="container mx-auto px-4 py-8">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/laptimes" element={<LapTimesPage />} />
-            <Route path="/telemetry" element={<TelemetryPage />} />
-            <Route path="/strategy" element={<StrategyPage />} />
-            <Route path="/predictions" element={<PredictionsPage />} />
-            <Route path="/drivers" element={<DriversPage />} />
-            <Route path="/circuits" element={<CircuitsPage />} />
-            <Route path="/comparisons" element={<ComparisonsPage />} />
-          </Routes>
-        </main>
-
-        <footer className="bg-f1-gray mt-16 py-6">
-          <div className="container mx-auto px-4 text-center text-gray-400">
-            <p>&copy; {new Date().getFullYear()} F1 Analytics Platform. Powered by FastF1 & FastAPI.</p>
-          </div>
-        </footer>
-      </div>
-    </Router>
+    <MotionConfig reducedMotion="user">
+      <Router>
+        <div className="flex min-h-screen flex-col text-white">
+          <NavBar />
+          <main className="flex-1">
+            <AnimatedRoutes />
+          </main>
+          <Footer />
+        </div>
+      </Router>
+    </MotionConfig>
   );
 }
 

@@ -1,25 +1,119 @@
 import React, { useState, useEffect } from 'react';
-import { FaBolt, FaChartLine, FaFlagCheckered, FaMedal, FaTrophy, FaSync } from 'react-icons/fa';
-import { 
+import { motion } from 'motion/react';
+import { FiAward, FiCpu, FiFlag, FiMapPin, FiTrendingUp, FiZap } from 'react-icons/fi';
+import {
   predictRace,
-  getAvailableYears, 
+  getAvailableYears,
   getAvailableTracks,
-  getNextRace 
+  getNextRace,
 } from '../services/api';
+import { getErrorMessage } from '../utils/helpers';
+import PageHeader from '../components/PageHeader';
+import { Card, Button, Field, Select, ErrorMessage, StartLights, AnimatedValue } from '../components/ui';
+
+const getTopPredictions = (predictionObj, count = 5) => {
+  if (!predictionObj) return [];
+  return Object.entries(predictionObj)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, count);
+};
+
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const percent = (prob) => (prob * 100).toFixed(1);
+
+const PLACE_COLORS = ['text-yellow-400', 'text-gray-300', 'text-orange-400'];
+
+/** Top three of the win prediction on a P2 / P1 / P3 podium. */
+function Podium({ entries }) {
+  const order = [1, 0, 2]; // P2, P1, P3
+  const heights = ['h-28', 'h-36', 'h-20'];
+  return (
+    <div className="flex items-end justify-center gap-2 sm:gap-4">
+      {order.map((rank, col) => {
+        const entry = entries[rank];
+        if (!entry) return <div key={rank} className="w-24 sm:w-32" />;
+        const [driver, prob] = entry;
+        return (
+          <motion.div
+            key={driver}
+            className="flex w-24 flex-col items-center sm:w-32"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 + col * 0.12, type: 'spring', stiffness: 200, damping: 20 }}
+          >
+            <div className={`font-mono text-2xl font-black sm:text-3xl ${rank === 0 ? 'text-white' : 'text-gray-200'}`}>{driver}</div>
+            <div className="mb-2 font-mono text-xs text-gray-400">{percent(prob)}%</div>
+            <motion.div
+              className={`relative w-full overflow-hidden rounded-t-xl border border-b-0 ${
+                rank === 0 ? 'border-f1-red/60 bg-gradient-to-b from-f1-red/50 to-f1-red/5' : 'border-white/10 bg-gradient-to-b from-white/15 to-white/[0.02]'
+              } ${heights[col]}`}
+              initial={{ scaleY: 0 }}
+              animate={{ scaleY: 1 }}
+              style={{ originY: 1 }}
+              transition={{ delay: 0.1 + col * 0.12, duration: 0.6, ease: 'easeOut' }}
+            >
+              <span className={`absolute inset-x-0 top-2 text-center text-3xl font-black italic ${PLACE_COLORS[rank]}`}>
+                {rank + 1}
+              </span>
+            </motion.div>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProbabilityList({ title, icon: Icon, entries, delay = 0 }) {
+  const max = entries.length ? entries[0][1] : 1;
+  return (
+    <Card title={title} eyebrow="Top 5" className="!mb-0 h-full" delay={delay}>
+      <span className="absolute right-5 top-5 text-2xl text-white/10" aria-hidden="true">
+        <Icon />
+      </span>
+      <ol className="space-y-3">
+        {entries.map(([driver, prob], idx) => (
+          <li key={driver}>
+            <div className="mb-1.5 flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2.5">
+                <span className={`w-5 font-mono text-xs font-bold ${PLACE_COLORS[idx] || 'text-gray-500'}`}>{idx + 1}</span>
+                <span className="font-mono font-bold">{driver}</span>
+              </span>
+              <span className="font-mono text-sm tabular-nums text-gray-300">{percent(prob)}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+              <motion.div
+                className={`h-full rounded-full ${idx === 0 ? 'bg-gradient-to-r from-f1-red to-f1-red-bright' : 'bg-f1-red/60'}`}
+                initial={{ width: 0 }}
+                animate={{ width: `${max ? (prob / max) * 100 : 0}%` }}
+                transition={{ delay: delay / 1000 + 0.2 + idx * 0.06, duration: 0.7, ease: 'easeOut' }}
+              />
+            </div>
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
 
 function PredictionsPage() {
   const [years, setYears] = useState([]);
   const [tracks, setTracks] = useState([]);
-  
+
   const [selectedYear, setSelectedYear] = useState('');
   const [selectedTrack, setSelectedTrack] = useState('');
   const [nextRace, setNextRace] = useState(null);
-  
+
   const [predictions, setPredictions] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingTracks, setLoadingTracks] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
+  const [error, setError] = useState('');
 
   // Load available years on mount
   useEffect(() => {
@@ -31,8 +125,8 @@ function PredictionsPage() {
           const currentYear = data.years[data.years.length - 1];
           setSelectedYear(currentYear);
         }
-      } catch (error) {
-        console.error('Error fetching years:', error);
+      } catch (err) {
+        setError(getErrorMessage(err, 'Could not load seasons.'));
       }
     };
     fetchYears();
@@ -42,48 +136,47 @@ function PredictionsPage() {
   useEffect(() => {
     const fetchTracksAndNextRace = async () => {
       if (!selectedYear) return;
-      
+
       setLoadingTracks(true);
+      setNextRace(null);
       try {
         const [tracksData, nextRaceData] = await Promise.all([
           getAvailableTracks(selectedYear),
-          getNextRace(selectedYear)
+          getNextRace(selectedYear),
         ]);
-        
-        setTracks(tracksData.tracks || []);
-        
+
+        // Round 0 is pre-season testing, which has no race to predict
+        const list = (tracksData.tracks || []).filter((t) => t.round !== 0);
+        setTracks(list);
+
         if (nextRaceData && nextRaceData.grand_prix) {
           setNextRace(nextRaceData);
           setSelectedTrack(nextRaceData.grand_prix);
-        } else if (tracksData.tracks && tracksData.tracks.length > 0) {
-          setSelectedTrack(tracksData.tracks[0].name);
+        } else if (list.length > 0) {
+          setSelectedTrack(list[0].name);
         }
-      } catch (error) {
-        console.error('Error fetching tracks:', error);
+      } catch (err) {
+        setError(getErrorMessage(err, 'Could not load the race calendar.'));
       } finally {
         setLoadingTracks(false);
       }
     };
-    
+
     fetchTracksAndNextRace();
   }, [selectedYear]);
 
   const handlePredictRace = async () => {
-    if (!selectedTrack) {
-      alert('Please select a Grand Prix');
-      return;
-    }
-
     let interval;
     try {
       setLoading(true);
+      setError('');
       setPredictions(null);
       setProgress(0);
       setStatus('Initializing prediction engine...');
 
       // Mock progress interval to keep user informed
       interval = setInterval(() => {
-        setProgress(prev => {
+        setProgress((prev) => {
           if (prev < 30) {
             setStatus('Fetching 2-year historical data...');
             return prev + 2;
@@ -101,240 +194,155 @@ function PredictionsPage() {
       }, 300);
 
       const data = await predictRace(selectedYear, selectedTrack);
-      
+
       clearInterval(interval);
       setProgress(100);
       setStatus(data.status || 'Prediction generated successfully!');
-      
+
       setTimeout(() => {
-        setPredictions(data);
+        setPredictions({ ...data, grandPrix: selectedTrack, year: selectedYear });
         setLoading(false);
       }, 500);
-      
-    } catch (error) {
+    } catch (err) {
       clearInterval(interval);
-      console.error('Error making prediction:', error);
-      alert('Error making prediction: ' + (error.response?.data?.detail || error.message));
+      setError(getErrorMessage(err, 'Error making prediction.'));
       setLoading(false);
     }
   };
 
-  const getTopPredictions = (predictionObj, count = 5) => {
-    if (!predictionObj) return [];
-    return Object.entries(predictionObj)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, count);
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
+  const winners = getTopPredictions(predictions?.race_winner);
+  const confidence = predictions ? Math.round((predictions.confidence || 0) * 100) : 0;
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6 text-f1-red">AI Race Predictions</h1>
-      
-      <div className="bg-f1-gray rounded-lg p-6 mb-6">
-        <p className="text-gray-300 mb-6">
-          Advanced AI predictions utilizing the last 2 years of F1 data, qualifying results, and track-specific analytics.
-        </p>
+      <PageHeader
+        icon={FiCpu}
+        eyebrow="Machine learning"
+        title="AI Race Predictions"
+        description="Predictions built from the last two seasons of results, qualifying pace and track-specific form."
+      />
 
-        {nextRace && (
-          <div className="bg-f1-dark border border-f1-red rounded-lg p-4 mb-6">
-            <h3 className="text-lg font-bold text-f1-red mb-2 flex items-center gap-2">
-              <FaFlagCheckered aria-hidden="true" />
-              <span>Next Race</span>
-            </h3>
-            <p className="text-white font-semibold">{nextRace.grand_prix}</p>
-            <p className="text-gray-400 text-sm">{nextRace.location}, {nextRace.country}</p>
-            <p className="text-gray-400 text-sm">{formatDate(nextRace.date)}</p>
-          </div>
-        )}
-        
-        <div className="grid md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm mb-2 font-semibold">Year</label>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-              className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none"
-            >
-              <option value="">Select Year</option>
-              {years.map(year => (
-                <option key={year} value={year}>{year}</option>
-              ))}
-            </select>
-          </div>
-          
-          <div>
-            <label className="block text-sm mb-2 font-semibold">Grand Prix</label>
-            <select
-              value={selectedTrack}
-              onChange={(e) => setSelectedTrack(e.target.value)}
-              disabled={loadingTracks || tracks.length === 0}
-              className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none disabled:opacity-50"
-            >
-              <option value="">Select Track</option>
-              {tracks.map((track, idx) => (
-                <option key={idx} value={track.name}>
-                  {track.name} - {track.country} {track.date ? `(${formatDate(track.date)})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+      <div className="grid gap-6 lg:grid-cols-5">
+        <Card title="Pick a race" className="lg:col-span-3">
+          <div className="grid gap-4 md:grid-cols-2 mb-5">
+            <Field label="Year">
+              <Select value={selectedYear} onChange={(v) => setSelectedYear(v ? parseInt(v, 10) : '')}>
+                <option value="">Select year</option>
+                {years.map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </Select>
+            </Field>
 
-        <button
-          onClick={handlePredictRace}
-          disabled={loading || !selectedYear || !selectedTrack}
-          className="bg-f1-red text-white px-6 py-2 rounded hover:bg-red-700 disabled:bg-gray-600 transition flex items-center gap-2"
-        >
-          {loading ? (
+            <Field label="Grand Prix">
+              <Select value={selectedTrack} onChange={setSelectedTrack} disabled={loadingTracks || tracks.length === 0}>
+                <option value="">Select track</option>
+                {tracks.map((track) => (
+                  <option key={track.name} value={track.name}>
+                    {track.round ? `R${track.round} · ` : ''}{track.name}{track.date ? ` (${formatDate(track.date)})` : ''}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+
+          <Button onClick={handlePredictRace} disabled={loading || !selectedYear || !selectedTrack}>
+            {loading ? 'Predicting…' : 'Generate Prediction'}
+          </Button>
+
+          {loading && (
+            <div className="mt-6 animate-fade-up" role="status">
+              <div className="mb-2 flex items-center justify-between gap-4 text-sm">
+                <span className="flex items-center gap-3 font-semibold text-gray-200">
+                  <StartLights />
+                  {status}
+                </span>
+                <span className="font-mono text-gray-400">{Math.round(progress)}%</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-f1-red to-f1-red-bright transition-all duration-300 ease-out"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card title={nextRace ? nextRace.grand_prix : 'Next race'} eyebrow="Up next" className="lg:col-span-2">
+          {nextRace ? (
             <>
-              <FaSync className="animate-spin" />
-              <span>Predicting...</span>
+              <p className="flex items-center gap-2 text-gray-300">
+                <FiMapPin className="text-f1-red" aria-hidden="true" />
+                {[nextRace.location, nextRace.country].filter(Boolean).join(', ')}
+              </p>
+              <p className="mt-1 flex items-center gap-2 text-sm text-gray-500">
+                <FiFlag aria-hidden="true" /> {formatDate(nextRace.date)}
+              </p>
+              {selectedTrack !== nextRace.grand_prix && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedTrack(nextRace.grand_prix)}
+                  className="mt-4 text-sm font-semibold text-f1-red-bright hover:underline"
+                >
+                  Select this race
+                </button>
+              )}
             </>
           ) : (
-            'Generate Prediction'
+            <p className="text-sm text-gray-400">
+              {loadingTracks ? 'Checking the calendar…' : 'No upcoming race this season. Pick any round to see how the model would have called it.'}
+            </p>
           )}
-        </button>
-
-        {loading && (
-          <div className="mt-6">
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-f1-red font-semibold">{status}</span>
-              <span className="text-gray-400">{Math.round(progress)}%</span>
-            </div>
-            <div className="w-full bg-f1-dark rounded-full h-2.5 overflow-hidden">
-              <div 
-                className="bg-f1-red h-full transition-all duration-300 ease-out"
-                style={{ width: `${progress}%` }}
-              ></div>
-            </div>
-          </div>
-        )}
+        </Card>
       </div>
+
+      <ErrorMessage message={error} />
 
       {predictions && !loading && (
         <>
-          <div className="grid md:grid-cols-3 gap-6 mb-6">
-            {/* Race Winner */}
-            <div className="bg-f1-gray rounded-lg p-6">
-              <h2 className="text-xl font-bold mb-4 text-f1-red flex items-center gap-2">
-                <FaTrophy aria-hidden="true" />
-                <span>Race Winner</span>
-              </h2>
-              <div className="space-y-2">
-                {getTopPredictions(predictions.race_winner).map(([driver, prob], idx) => (
-                  <div key={driver} className="flex justify-between items-center py-2 border-b border-gray-700 last:border-0">
-                    <div className="flex items-center gap-2">
-                      <span className={`font-bold ${idx === 0 ? 'text-yellow-400' : idx === 1 ? 'text-gray-300' : idx === 2 ? 'text-orange-400' : 'text-white'}`}>
-                        {idx + 1}.
-                      </span>
-                      <span className="font-semibold">{driver}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 bg-f1-dark rounded-full h-2 overflow-hidden">
-                        <div 
-                          className="bg-f1-red h-full" 
-                          style={{ width: `${(prob * 100).toFixed(0)}%` }}
-                        />
-                      </div>
-                      <span className="text-gray-300 font-mono text-sm w-12 text-right">{(prob * 100).toFixed(1)}%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Podium */}
-            <div className="bg-f1-gray rounded-lg p-6">
-              <h2 className="text-xl font-bold mb-4 text-f1-red flex items-center gap-2">
-                <FaMedal aria-hidden="true" />
-                <span>Podium Finishers</span>
-              </h2>
-              <div className="space-y-2">
-                {getTopPredictions(predictions.podium).map(([driver, prob], idx) => (
-                  <div key={driver} className="flex justify-between items-center py-2 border-b border-gray-700 last:border-0">
-                    <div className="flex items-center gap-2">
-                      <span className={`font-bold ${idx === 0 ? 'text-yellow-400' : idx === 1 ? 'text-gray-300' : idx === 2 ? 'text-orange-400' : 'text-white'}`}>
-                        {idx + 1}.
-                      </span>
-                      <span className="font-semibold">{driver}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 bg-f1-dark rounded-full h-2 overflow-hidden">
-                        <div 
-                          className="bg-f1-red h-full" 
-                          style={{ width: `${(prob * 100).toFixed(0)}%` }}
-                        />
-                      </div>
-                      <span className="text-gray-300 font-mono text-sm w-12 text-right">{(prob * 100).toFixed(1)}%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Fastest Lap */}
-            <div className="bg-f1-gray rounded-lg p-6">
-              <h2 className="text-xl font-bold mb-4 text-f1-red flex items-center gap-2">
-                <FaBolt aria-hidden="true" />
-                <span>Fastest Lap</span>
-              </h2>
-              <div className="space-y-2">
-                {getTopPredictions(predictions.fastest_lap).map(([driver, prob], idx) => (
-                  <div key={driver} className="flex justify-between items-center py-2 border-b border-gray-700 last:border-0">
-                    <div className="flex items-center gap-2">
-                      <span className={`font-bold ${idx === 0 ? 'text-yellow-400' : idx === 1 ? 'text-gray-300' : idx === 2 ? 'text-orange-400' : 'text-white'}`}>
-                        {idx + 1}.
-                      </span>
-                      <span className="font-semibold">{driver}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 bg-f1-dark rounded-full h-2 overflow-hidden">
-                        <div 
-                          className="bg-f1-red h-full" 
-                          style={{ width: `${(prob * 100).toFixed(0)}%` }}
-                        />
-                      </div>
-                      <span className="text-gray-300 font-mono text-sm w-12 text-right">{(prob * 100).toFixed(1)}%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-f1-gray rounded-lg p-6">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <FaChartLine aria-hidden="true" />
-              <span>Prediction Insights</span>
-            </h2>
-            <div className="flex items-center gap-4 mb-4">
-              <div className="flex-1 bg-f1-dark rounded-full h-8 overflow-hidden relative">
-                <div
-                  className="bg-f1-red h-full flex items-center justify-center text-sm font-bold transition-all duration-500"
-                  style={{ width: `${(predictions.confidence * 100).toFixed(0)}%` }}
-                >
-                  <span className="z-10">Confidence: {(predictions.confidence * 100).toFixed(0)}%</span>
+          <Card
+            title={`${predictions.grandPrix} ${predictions.year}`}
+            eyebrow="Predicted podium"
+            actions={
+              <div className="text-right">
+                <div className="eyebrow">Model confidence</div>
+                <div className="font-mono text-2xl font-bold">
+                  <AnimatedValue value={confidence} />%
                 </div>
               </div>
+            }
+          >
+            {winners.length > 0 ? <Podium entries={winners} /> : <p className="text-gray-400">No win probabilities returned.</p>}
+            <div className="mt-6 h-2 overflow-hidden rounded-full bg-white/[0.05]">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-f1-red via-f1-red-bright to-yellow-400"
+                initial={{ width: 0 }}
+                animate={{ width: `${confidence}%` }}
+                transition={{ duration: 1, ease: 'easeOut' }}
+              />
             </div>
-            <div className="bg-f1-dark rounded p-4 border-l-4 border-f1-red">
-              <p className="text-white text-sm">
-                <span className="text-f1-red font-bold">Analysis Status:</span> {status}
+          </Card>
+
+          <div className="grid gap-6 md:grid-cols-3 mb-6">
+            <ProbabilityList title="Race Winner" icon={FiAward} entries={winners} />
+            <ProbabilityList title="Podium Finish" icon={FiTrendingUp} entries={getTopPredictions(predictions.podium)} delay={80} />
+            <ProbabilityList title="Fastest Lap" icon={FiZap} entries={getTopPredictions(predictions.fastest_lap)} delay={160} />
+          </div>
+
+          <Card title="Prediction Insights">
+            <div className="rounded-xl border-l-4 border-f1-red bg-black/30 p-4">
+              <p className="text-sm text-white">
+                <span className="font-bold text-f1-red-bright">Analysis status:</span> {status}
               </p>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-400">
-                <div>• Historical Races Analyzed: {predictions.data_info?.historical_races}</div>
-                <div>• Qualifying Data Used: {predictions.data_info?.has_qualifying ? 'Yes' : 'No'}</div>
-                <div>• Data Window: 24 Months</div>
-                <div>• ML Model: Optimized Vector Engine</div>
+              <div className="mt-3 grid gap-2 text-xs text-gray-400 sm:grid-cols-2">
+                <div>• Historical races analyzed: {predictions.data_info?.historical_races ?? '--'}</div>
+                <div>• Qualifying data used: {predictions.data_info?.has_qualifying ? 'Yes' : 'No'}</div>
+                <div>• Data window: 24 months</div>
+                <div>• ML model: Optimized vector engine</div>
               </div>
             </div>
-          </div>
+          </Card>
         </>
       )}
     </div>
