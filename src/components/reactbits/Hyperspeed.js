@@ -1189,7 +1189,11 @@ const Hyperspeed = ({ effectOptions = DEFAULT_EFFECT_OPTIONS, lightMode = false 
 
     const myApp = new App(container, options);
     appRef.current = myApp;
-    myApp.loadAssets().then(myApp.init);
+    // StrictMode (and fast unmounts) can dispose the app before its assets load;
+    // initialising then would hit the lost WebGL context and throw
+    myApp.loadAssets().then(() => {
+      if (!myApp.disposed) myApp.init();
+    });
 
     const visibility = new IntersectionObserver(([entry]) => {
       myApp.paused = !entry.isIntersecting;
@@ -1199,9 +1203,8 @@ const Hyperspeed = ({ effectOptions = DEFAULT_EFFECT_OPTIONS, lightMode = false 
 
     return () => {
       visibility.disconnect();
-      if (appRef.current) {
-        appRef.current.dispose();
-      }
+      myApp.dispose();
+      if (appRef.current === myApp) appRef.current = null;
     };
   }, [effectOptions, lightMode]);
 
