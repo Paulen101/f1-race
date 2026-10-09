@@ -147,6 +147,7 @@ function DriversPage() {
         icon={FiUsers}
         eyebrow="Championship"
         title="Driver Analysis"
+        effect="decrypt"
         description="The drivers' championship, each driver's season in numbers and their career since 2018."
       />
 
@@ -191,7 +192,7 @@ function DriversPage() {
             {loadingStats && <LoadingNote>Loading season stats…</LoadingNote>}
             {seasonStats && (
               <>
-                <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="stagger grid grid-cols-2 gap-3 mb-4">
                   <StatTile label="Points" value={formatPoints(seasonStats.points)} accent />
                   <StatTile label="Races" value={seasonStats.races} />
                   <StatTile label="Wins" value={seasonStats.wins} />
@@ -222,7 +223,7 @@ function DriversPage() {
       {loadingCareer && <LoadingNote>Loading every season since 2018… this can take a few minutes the first time.</LoadingNote>}
       {career && (
         <Card title={selectedDriver?.full_name || career.driver} eyebrow="Career since 2018">
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+          <div className="stagger grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
             <StatTile label="Seasons" value={career.years} />
             <StatTile label="Races" value={career.total_races} />
             <StatTile label="Wins" value={career.total_wins} />

@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useId, useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { FiAlertTriangle, FiChevronDown, FiInfo } from 'react-icons/fi';
+import { FiAlertTriangle, FiInfo } from 'react-icons/fi';
 import SpotlightCard from './reactbits/SpotlightCard';
 import CountUp from './reactbits/CountUp';
+import Select, { FieldContext } from './Select';
 import { getTireColor } from '../utils/helpers';
 
 /**
@@ -10,10 +11,21 @@ import { getTireColor } from '../utils/helpers';
  * red accents and timing-screen style numbers.
  */
 
-export function Card({ title, eyebrow, actions, children, className = '', delay = 0 }) {
+const REVEALS = {
+  fade: 'animate-fade-up',
+  blur: 'animate-blur-in',
+  pop: 'animate-pop-in',
+};
+
+/**
+ * Panels enter by role: titled result panels resolve out of a blur, plain
+ * form panels just fade up. Pass `reveal` to override.
+ */
+export function Card({ title, eyebrow, actions, children, className = '', delay = 0, reveal }) {
+  const animation = REVEALS[reveal || (title ? 'blur' : 'fade')];
   return (
     <SpotlightCard
-      className={`rounded-2xl border border-white/[0.06] backdrop-blur-sm p-5 sm:p-6 mb-6 min-w-0 animate-fade-up ${className}`}
+      className={`rounded-2xl border border-white/[0.06] backdrop-blur-sm p-5 sm:p-6 mb-6 min-w-0 ${animation} ${className}`}
       style={{
         '--spotlight-card-surface': 'rgba(20, 20, 27, 0.78)',
         '--spotlight-card-shadow': '0 24px 48px -24px rgba(0, 0, 0, 0.7)',
@@ -44,32 +56,17 @@ export function Card({ title, eyebrow, actions, children, className = '', delay 
 }
 
 export function Field({ label, children }) {
+  const id = useId();
+  const field = useMemo(() => ({ inputId: `${id}-input`, labelId: `${id}-label` }), [id]);
   return (
     <div className="min-w-0">
-      <label className="eyebrow block mb-2">{label}</label>
-      {children}
+      <label id={field.labelId} htmlFor={field.inputId} className="eyebrow block mb-2">{label}</label>
+      <FieldContext.Provider value={field}>{children}</FieldContext.Provider>
     </div>
   );
 }
 
-export function Select({ value, onChange, disabled, children }) {
-  return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="w-full appearance-none rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-3.5 pr-10 text-sm font-semibold text-white outline-none transition hover:border-white/20 focus:border-f1-red focus:bg-white/[0.05] focus:ring-2 focus:ring-f1-red/30 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {children}
-      </select>
-      <FiChevronDown
-        aria-hidden="true"
-        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
-      />
-    </div>
-  );
-}
+export { Select };
 
 export function Button({ children, className = '', ...props }) {
   return (
@@ -154,7 +151,7 @@ export function AnimatedValue({ value }) {
 export function StatTile({ label, value, unit, sub, accent = false }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-xl border p-4 ${
+      className={`relative overflow-hidden rounded-xl border p-4 animate-pop-in ${
         accent ? 'border-f1-red/40 bg-f1-red/[0.08]' : 'border-white/[0.06] bg-black/30'
       }`}
     >
@@ -258,6 +255,8 @@ export function DataTable({ columns, rows, rowKey, onRowClick, selectedKey }) {
         <tbody>
           {rows.map((row, idx) => {
             const key = rowKey ? rowKey(row) : idx;
+            // The first rows slide in one after another; later ones just appear
+            const rowStyle = idx < 24 ? { animationDelay: `${idx * 22}ms` } : undefined;
             const selected = selectedKey !== undefined && key === selectedKey;
             const clickable = Boolean(onRowClick);
             return (
@@ -276,7 +275,8 @@ export function DataTable({ columns, rows, rowKey, onRowClick, selectedKey }) {
                 }
                 tabIndex={clickable ? 0 : undefined}
                 aria-selected={clickable ? selected : undefined}
-                className={`border-b border-white/[0.04] last:border-0 transition-colors ${clickable ? 'cursor-pointer outline-none focus-visible:bg-white/[0.05]' : ''} ${
+                style={rowStyle}
+                className={`border-b border-white/[0.04] last:border-0 transition-colors ${idx < 24 ? 'animate-slide-in' : ''} ${clickable ? 'cursor-pointer outline-none focus-visible:bg-white/[0.05]' : ''} ${
                   selected ? 'bg-f1-red/[0.12] shadow-[inset_3px_0_0_#E10600]' : 'hover:bg-white/[0.04]'
                 }`}
               >

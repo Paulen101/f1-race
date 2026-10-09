@@ -81,6 +81,7 @@ function CircuitsPage() {
         icon={FiMap}
         eyebrow="Circuits"
         title="Circuit Analysis"
+        effect="letters"
         description="Race stats for any Grand Prix: lap times, pit stops, safety cars and every winner since 2018."
       />
 
@@ -104,7 +105,7 @@ function CircuitsPage() {
             {[info.location, info.country].filter(Boolean).join(', ')}
             {info.date && <span className="text-gray-500">· {new Date(info.date).toLocaleDateString()}</span>}
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="stagger grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatTile label="Race laps" value={info.num_laps} accent />
             <StatTile
               label="Fastest race lap"
@@ -127,7 +128,7 @@ function CircuitsPage() {
 
       {stats && (
         <Card title="Race Incidents & Tyres">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <div className="stagger grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
             <StatTile label="Safety cars" value={countOrNA(stats.safety_car_periods)} />
             <StatTile label="Virtual safety cars" value={countOrNA(stats.virtual_safety_car_periods)} />
             <StatTile label="Red flags" value={countOrNA(stats.red_flags)} />

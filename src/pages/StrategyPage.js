@@ -187,6 +187,7 @@ function StrategyPage() {
         icon={FiLayers}
         eyebrow="Pit wall"
         title="Race Strategy"
+        effect="rise"
         description="Tyre stints for the whole field, every pit stop and how quickly each compound fell away."
       />
 
