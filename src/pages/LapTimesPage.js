@@ -1,157 +1,278 @@
-import React, { useState, useEffect } from 'react';
-import { getLapTimes, getAvailableYears, getAvailableTracks, getSessionInfo } from '../services/api';
-import { formatLapTime, getErrorMessage } from '../utils/helpers';
+import React, { useEffect, useMemo, useState } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { FiClock } from 'react-icons/fi';
+import { getLapTimes, getSessionInfo } from '../services/api';
+import { formatLapTime, getErrorMessage, getTireColor } from '../utils/helpers';
+import { axisLabel, axisProps, gridProps, tooltipProps } from '../utils/chartTheme';
+import useSeasonSelector from '../hooks/useSeasonSelector';
+import SeasonPicker from '../components/SeasonPicker';
+import PageHeader from '../components/PageHeader';
+import {
+  Card, Button, SecondaryButton, Field, Select, ErrorMessage, LoadingNote, EmptyNote, StatTile, DataTable, CompoundBadge,
+} from '../components/ui';
+
+const PAGE_SIZE = 50;
+
+const median = (values) => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
+
+/** Timing-tower style ranking of each driver's fastest lap. */
+function FastestLapTower({ laps }) {
+  const ranking = useMemo(() => {
+    const best = new Map();
+    laps.forEach((lap) => {
+      const current = best.get(lap.driver);
+      if (!current || lap.lap_time < current.lap_time) best.set(lap.driver, lap);
+    });
+    return [...best.values()].sort((a, b) => a.lap_time - b.lap_time);
+  }, [laps]);
+
+  if (ranking.length === 0) return null;
+  const leader = ranking[0].lap_time;
+  const maxGap = Math.max(0.001, ranking[ranking.length - 1].lap_time - leader);
+
+  return (
+    <ol className="space-y-1">
+      {ranking.map((lap, idx) => {
+        const gap = lap.lap_time - leader;
+        return (
+          <li
+            key={lap.driver}
+            className="grid grid-cols-[2rem_3.5rem_1fr_auto] items-center gap-3 rounded-lg px-2 py-1.5 text-sm hover:bg-white/[0.03] animate-fade-up"
+            style={{ animationDelay: `${idx * 25}ms` }}
+          >
+            <span className={`font-mono text-xs font-bold ${idx === 0 ? 'text-f1-purple' : 'text-gray-500'}`}>
+              P{idx + 1}
+            </span>
+            <span className="font-mono font-bold">{lap.driver}</span>
+            <span className="relative h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+              <span
+                className={`absolute inset-y-0 left-0 rounded-full ${idx === 0 ? 'bg-f1-purple' : 'bg-f1-red/70'}`}
+                style={{ width: `${idx === 0 ? 100 : Math.max(4, 100 - (gap / maxGap) * 96)}%` }}
+              />
+            </span>
+            <span className="w-24 text-right font-mono text-xs tabular-nums">
+              {idx === 0 ? formatLapTime(lap.lap_time) : <span className="text-gray-400">+{gap.toFixed(3)}</span>}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** Lap time trace for a single driver; dots are coloured by tyre compound. */
+function LapTrace({ laps }) {
+  const times = laps.map((l) => l.lap_time);
+  const fastest = Math.min(...times);
+  // Pit and safety-car laps would squash the scale, so clip them
+  const ceiling = (median(times) || fastest) * 1.07;
+
+  const CompoundDot = ({ cx, cy, payload }) =>
+    cx == null || cy == null ? null : (
+      <circle cx={cx} cy={cy} r={3} fill={getTireColor(payload.compound)} stroke="#0B0B10" strokeWidth={1} />
+    );
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <LineChart data={laps} margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+        <CartesianGrid {...gridProps} />
+        <XAxis dataKey="lap_number" {...axisProps} label={axisLabel('Lap')} />
+        <YAxis
+          {...axisProps}
+          domain={[Math.floor(fastest - 0.5), Math.ceil(ceiling)]}
+          allowDataOverflow
+          tickFormatter={(v) => formatLapTime(v).slice(0, -2)}
+          width={60}
+        />
+        <Tooltip
+          {...tooltipProps}
+          labelFormatter={(lap) => `Lap ${lap}`}
+          formatter={(v, _name, item) => [formatLapTime(v), item.payload.compound || 'Lap time']}
+        />
+        <Line type="monotone" dataKey="lap_time" stroke="#E10600" strokeWidth={2} dot={<CompoundDot />} activeDot={{ r: 5 }} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
 
 function LapTimesPage() {
-  const [years, setYears] = useState([]);
-  const [tracks, setTracks] = useState([]);
-  const [drivers, setDrivers] = useState([]);
-  const [year, setYear] = useState('');
-  const [grandPrix, setGrandPrix] = useState('');
+  const season = useSeasonSelector();
+  const { year, grandPrix } = season;
   const [sessionName, setSessionName] = useState('Race');
+  const [drivers, setDrivers] = useState([]);
   const [selectedDriver, setSelectedDriver] = useState(''); // Empty = all drivers
-  const [lapData, setLapData] = useState(null);
+  const [result, setResult] = useState(null); // {laps, driver, year, grandPrix, sessionName}
+  const [visible, setVisible] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
+  // Drivers for the selected session
   useEffect(() => {
-    const fetchYears = async () => {
-      try {
-        const data = await getAvailableYears();
-        setYears(data.years || []);
-        if (data.years && data.years.length > 0) {
-          setYear(data.years[data.years.length - 1]);
-        }
-      } catch (error) {
-        console.error('Error fetching years:', error);
-      }
-    };
-    fetchYears();
-  }, []);
-
-  useEffect(() => {
-    const fetchTracks = async () => {
-      if (!year) return;
-      try {
-        const data = await getAvailableTracks(year);
-        setTracks(data.tracks || []);
-        if (data.tracks && data.tracks.length > 0) {
-          setGrandPrix(data.tracks[0].name);
-        }
-      } catch (error) {
-        console.error('Error fetching tracks:', error);
-      }
-    };
-    fetchTracks();
-  }, [year]);
-
-  // Load drivers when grand prix and session change
-  useEffect(() => {
-    const fetchDrivers = async () => {
-      if (!year || !grandPrix || !sessionName) return;
-      try {
-        const data = await getSessionInfo(year, grandPrix, sessionName);
-        setDrivers(data.drivers || []);
-        setSelectedDriver(''); // Reset driver selection
-      } catch (error) {
-        console.error('Error fetching drivers:', error);
+    if (!year || !grandPrix || !sessionName) return undefined;
+    let cancelled = false;
+    getSessionInfo(year, grandPrix, sessionName)
+      .then((data) => {
+        if (cancelled) return;
+        const list = data.drivers || [];
+        setDrivers(list);
+        setSelectedDriver((d) => (list.includes(d) ? d : ''));
+      })
+      .catch(() => {
+        if (cancelled) return;
         setDrivers([]);
-      }
+        setSelectedDriver('');
+      });
+    return () => {
+      cancelled = true;
     };
-    fetchDrivers();
   }, [year, grandPrix, sessionName]);
 
   const handleLoadData = async () => {
-    if (!grandPrix) {
-      alert('Please select a Grand Prix');
-      return;
-    }
-
     try {
       setLoading(true);
-      // Pass driver parameter - empty string means all drivers
-      const laps = await getLapTimes(year, grandPrix, sessionName, selectedDriver || null);
-      setLapData(laps.laps || []);
-    } catch (error) {
-      console.error('Error loading lap data:', error);
-      alert(getErrorMessage(error, 'Error loading data'));
+      setError('');
+      setResult(null);
+      setVisible(PAGE_SIZE);
+      // Empty driver means all drivers
+      const data = await getLapTimes(year, grandPrix, sessionName, selectedDriver || null);
+      setResult({ laps: data.laps || [], driver: selectedDriver, year, grandPrix, sessionName });
+    } catch (err) {
+      setError(getErrorMessage(err, 'Error loading lap times.'));
     } finally {
       setLoading(false);
     }
   };
 
+  const laps = useMemo(() => result?.laps || [], [result]);
+
+  const records = useMemo(() => {
+    const bestOf = (key) => {
+      const values = laps.map((l) => l[key]).filter((v) => v != null);
+      return values.length ? Math.min(...values) : null;
+    };
+    const personalBest = new Map();
+    laps.forEach((l) => {
+      if (!personalBest.has(l.driver) || l.lap_time < personalBest.get(l.driver)) personalBest.set(l.driver, l.lap_time);
+    });
+    return {
+      lap: bestOf('lap_time'),
+      sector1: bestOf('sector1'),
+      sector2: bestOf('sector2'),
+      sector3: bestOf('sector3'),
+      personalBest,
+    };
+  }, [laps]);
+
+  const fastestLap = laps.find((l) => l.lap_time === records.lap);
+
+  const timeClass = (row) => {
+    if (row.lap_time === records.lap) return 'text-f1-purple font-bold';
+    if (row.lap_time === records.personalBest.get(row.driver)) return 'text-green-400 font-bold';
+    return '';
+  };
+  const sectorCell = (key) => (row) =>
+    row[key] == null ? '--' : (
+      <span className={row[key] === records[key] ? 'text-f1-purple font-bold' : 'text-gray-300'}>{row[key].toFixed(3)}</span>
+    );
+
+  const columns = [
+    { key: 'lap_number', label: 'Lap', align: 'right' },
+    { key: 'driver', label: 'Driver', className: 'font-mono font-bold' },
+    { key: 'lap_time', label: 'Time', align: 'right', render: (row) => <span className={timeClass(row)}>{formatLapTime(row.lap_time)}</span> },
+    { key: 'sector1', label: 'S1', align: 'right', render: sectorCell('sector1') },
+    { key: 'sector2', label: 'S2', align: 'right', render: sectorCell('sector2') },
+    { key: 'sector3', label: 'S3', align: 'right', render: sectorCell('sector3') },
+    {
+      key: 'compound',
+      label: 'Tyre',
+      render: (row) => (
+        <span className="flex items-center gap-2">
+          <CompoundBadge compound={row.compound} short />
+          {row.tire_life != null && <span className="font-mono text-xs text-gray-500">{row.tire_life}L</span>}
+        </span>
+      ),
+    },
+  ];
+
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6 text-f1-red">Lap Time Analysis</h1>
-      
-      <div className="bg-f1-gray rounded-lg p-6 mb-6">
-        <div className="grid md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-sm mb-2 font-semibold">Year</label>
-            <select value={year} onChange={(e) => setYear(parseInt(e.target.value))} className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none">
-              <option value="">Select Year</option>
-              {years.map(y => (<option key={y} value={y}>{y}</option>))}
-            </select>
-          </div>
-          
-          <div>
-            <label className="block text-sm mb-2 font-semibold">Grand Prix</label>
-            <select value={grandPrix} onChange={(e) => setGrandPrix(e.target.value)} disabled={tracks.length === 0} className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none disabled:opacity-50">
-              <option value="">Select Track</option>
-              {tracks.map((track, idx) => (<option key={idx} value={track.name}>{track.name}</option>))}
-            </select>
-          </div>
-          
-          <div>
-            <label className="block text-sm mb-2 font-semibold">Session</label>
-            <select value={sessionName} onChange={(e) => setSessionName(e.target.value)} className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none">
+      <PageHeader
+        icon={FiClock}
+        eyebrow="Timing"
+        title="Lap Time Analysis"
+        description="Every timed lap with sectors and tyres. Purple marks the session best, green each driver's personal best."
+      />
+
+      <Card>
+        <ErrorMessage message={season.error} />
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-5">
+          <SeasonPicker season={season} />
+          <Field label="Session">
+            <Select value={sessionName} onChange={setSessionName}>
               <option value="Race">Race</option>
               <option value="Qualifying">Qualifying</option>
-            </select>
-          </div>
+              <option value="Sprint">Sprint</option>
+            </Select>
+          </Field>
+          <Field label="Driver (optional)">
+            <Select value={selectedDriver} onChange={setSelectedDriver} disabled={drivers.length === 0}>
+              <option value="">All drivers</option>
+              {drivers.map((driver) => (
+                <option key={driver} value={driver}>{driver}</option>
+              ))}
+            </Select>
+          </Field>
         </div>
-        
-        <div className="mb-4">
-          <label className="block text-sm mb-2 font-semibold">Driver (optional)</label>
-          <select 
-            value={selectedDriver} 
-            onChange={(e) => setSelectedDriver(e.target.value)} 
-            disabled={drivers.length === 0}
-            className="w-full px-3 py-2 bg-f1-dark rounded border border-gray-600 focus:border-f1-red outline-none disabled:opacity-50"
-          >
-            <option value="">All Drivers</option>
-            {drivers.map((driver, idx) => (<option key={idx} value={driver}>{driver}</option>))}
-          </select>
-        </div>
-        
-        <button onClick={handleLoadData} disabled={loading || !year || !grandPrix} className="bg-f1-red text-white px-6 py-2 rounded hover:bg-red-700 disabled:bg-gray-600 transition">
-          {loading ? 'Loading...' : 'Load Lap Times'}
-        </button>
-      </div>
+        <Button onClick={handleLoadData} disabled={loading || !year || !grandPrix}>
+          {loading ? 'Loading…' : 'Load Lap Times'}
+        </Button>
+      </Card>
 
-      {lapData && lapData.length > 0 && (
-        <div className="bg-f1-gray rounded-lg p-6">
-          <h2 className="text-xl font-bold mb-4">Lap Times Data ({lapData.length} laps)</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-600">
-                  <th className="text-left p-2">Lap</th>
-                  <th className="text-left p-2">Driver</th>
-                  <th className="text-left p-2">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lapData.slice(0, 50).map((lap, idx) => (
-                  <tr key={idx} className="border-b border-gray-700 hover:bg-f1-dark">
-                    <td className="p-2">{lap.lap_number}</td>
-                    <td className="p-2 font-bold">{lap.driver}</td>
-                    <td className="p-2">{formatLapTime(lap.lap_time)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <ErrorMessage message={error} />
+      {loading && <LoadingNote>Loading lap data… the first load of a session can take a minute.</LoadingNote>}
+
+      {result && laps.length === 0 && (
+        <Card>
+          <EmptyNote>No timed laps for this selection.</EmptyNote>
+        </Card>
+      )}
+
+      {result && laps.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-6 animate-fade-up">
+            <StatTile label="Timed laps" value={laps.length} sub={`${result.grandPrix} ${result.year}`} />
+            <StatTile label="Fastest lap" value={formatLapTime(records.lap)} sub={fastestLap && `${fastestLap.driver} · lap ${fastestLap.lap_number}`} accent />
+            <StatTile label="Median lap" value={formatLapTime(median(laps.map((l) => l.lap_time)))} sub={result.sessionName} />
+            <StatTile
+              label="Ideal lap"
+              value={records.sector1 && records.sector2 && records.sector3 ? formatLapTime(records.sector1 + records.sector2 + records.sector3) : '--'}
+              sub="Best S1 + S2 + S3"
+            />
           </div>
-        </div>
+
+          <Card
+            title={result.driver ? `${result.driver} · Lap trace` : 'Fastest lap per driver'}
+            eyebrow={`${result.grandPrix} ${result.year} · ${result.sessionName}`}
+          >
+            {result.driver ? <LapTrace laps={laps} /> : <FastestLapTower laps={laps} />}
+          </Card>
+
+          <Card title={`All laps (${laps.length})`}>
+            <DataTable columns={columns} rows={laps.slice(0, visible)} rowKey={(row) => `${row.driver}-${row.lap_number}`} />
+            {visible < laps.length && (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <SecondaryButton onClick={() => setVisible((v) => v + PAGE_SIZE)}>Show {PAGE_SIZE} more</SecondaryButton>
+                <SecondaryButton onClick={() => setVisible(laps.length)}>Show all {laps.length}</SecondaryButton>
+                <span className="text-xs text-gray-500">Showing {visible} of {laps.length}</span>
+              </div>
+            )}
+          </Card>
+        </>
       )}
     </div>
   );
