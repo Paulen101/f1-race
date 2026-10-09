@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inspo Library</title>
+  <meta name="description" content="A personal library of flyer, deck and website references, each with a prompt to recreate it.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead-row">
+      <a class="wordmark" href="./">Inspo Library</a>
+      <div class="masthead-actions">
+        <label class="search">
+          <span class="visually-hidden">Search</span>
+          <input id="search" type="search" placeholder="Search titles, tags, notes" autocomplete="off">
+          <kbd>/</kbd>
+        </label>
+        <button class="btn btn-primary" id="add-btn" type="button">Add reference</button>
+      </div>
+    </div>
+
+    <nav class="taskbar" role="tablist" aria-label="Library sections">
+      <button class="tab" role="tab" id="tab-flyer" data-cat="flyer" aria-selected="true">
+        Flyers <span class="count" data-count="flyer">0</span>
+      </button>
+      <button class="tab" role="tab" id="tab-deck" data-cat="deck" aria-selected="false" tabindex="-1">
+        Presentation decks <span class="count" data-count="deck">0</span>
+      </button>
+      <button class="tab" role="tab" id="tab-website" data-cat="website" aria-selected="false" tabindex="-1">
+        Websites <span class="count" data-count="website">0</span>
+      </button>
+      <span class="tab-indicator" aria-hidden="true"></span>
+    </nav>
+  </header>
+
+  <main id="library" role="tabpanel" aria-labelledby="tab-flyer">
+    <div class="grid" id="grid" data-cat="flyer"></div>
+
+    <div class="empty" id="empty" hidden>
+      <p class="empty-title">Nothing saved under <span id="empty-cat">flyers</span> yet.</p>
+      <p class="empty-sub">Drop a screenshot anywhere on the page, paste one with <kbd>Ctrl</kbd>+<kbd>V</kbd>, or
+        <button class="link" type="button" id="empty-add">pick a file</button>.</p>
+    </div>
+    <p class="no-results" id="no-results" hidden>No matches for that search.</p>
+  </main>
+
+  <footer class="colophon">
+    <span id="storage-note">Saved in this browser only.</span>
+    <span class="colophon-actions">
+      <button class="link" type="button" id="export-btn">Export backup</button>
+      <label class="link">Import backup<input type="file" id="import-input" accept="application/json" hidden></label>
+    </span>
+  </footer>
+
+  <div class="drop-veil" id="drop-veil" aria-hidden="true"><p>Drop to add to <span id="veil-cat">flyers</span></p></div>
+  <input type="file" id="file-input" accept="image/*" hidden>
+
+  <!-- Detail view -->
+  <dialog class="sheet detail" id="detail" aria-labelledby="d-title">
+    <div class="detail-media" id="d-media"><img id="d-img" alt=""></div>
+    <div class="detail-body">
+      <div class="detail-head">
+        <p class="eyebrow" id="d-cat"></p>
+        <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button>
+      </div>
+      <h2 id="d-title"></h2>
+      <a id="d-source" class="source" target="_blank" rel="noopener noreferrer"></a>
+      <ul class="tags" id="d-tags"></ul>
+
+      <section class="block">
+        <h3>Palette</h3>
+        <ul class="palette" id="d-palette"></ul>
+        <p class="hint">Click a swatch to copy its hex.</p>
+      </section>
+
+      <dl class="facts" id="d-facts"></dl>
+
+      <section class="block" id="d-notes-block">
+        <h3>Notes</h3>
+        <p id="d-notes" class="notes"></p>
+      </section>
+
+      <section class="block prompt-block">
+        <div class="prompt-head">
+          <h3>Prompt</h3>
+          <div class="seg" role="radiogroup" aria-label="Prompt length">
+            <button type="button" role="radio" data-variant="full" aria-checked="true">Detailed</button>
+            <button type="button" role="radio" data-variant="short" aria-checked="false">Short</button>
+          </div>
+        </div>
+        <pre class="prompt" id="d-prompt"></pre>
+        <button class="btn btn-primary btn-block" type="button" id="copy-prompt">Copy prompt</button>
+      </section>
+
+      <div class="detail-foot">
+        <button class="btn" type="button" id="edit-btn">Edit</button>
+        <button class="btn btn-danger" type="button" id="delete-btn">Delete</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Add / edit form -->
+  <dialog class="sheet editor" id="editor" aria-labelledby="e-heading">
+    <form id="editor-form" method="dialog">
+      <div class="editor-media">
+        <img id="e-img" alt="">
+        <label class="btn btn-small replace">Replace image<input type="file" id="e-file" accept="image/*" hidden></label>
+      </div>
+      <div class="editor-body">
+        <div class="detail-head">
+          <h2 id="e-heading">New reference</h2>
+          <button class="icon-btn" type="button" data-close aria-label="Close">&times;</button>
+        </div>
+
+        <fieldset class="field">
+          <legend>Section</legend>
+          <div class="seg seg-wide" id="e-cat">
+            <label><input type="radio" name="category" value="flyer"><span>Flyer</span></label>
+            <label><input type="radio" name="category" value="deck"><span>Deck</span></label>
+            <label><input type="radio" name="category" value="website"><span>Website</span></label>
+          </div>
+        </fieldset>
+
+        <label class="field">
+          <span>Title</span>
+          <input name="title" required maxlength="120" placeholder="e.g. Linear changelog page">
+        </label>
+        <label class="field">
+          <span>Source link <em>optional</em></span>
+          <input name="source" type="url" placeholder="https://">
+        </label>
+        <label class="field">
+          <span>Style keywords <em>comma separated</em></span>
+          <input name="tags" placeholder="editorial, monochrome, big serif, lots of whitespace">
+        </label>
+
+        <div class="field">
+          <span>Palette <em>pulled from the image, edit if it got it wrong</em></span>
+          <div class="palette-edit" id="e-palette"></div>
+        </div>
+
+        <label class="field">
+          <span>Typography</span>
+          <input name="typography" placeholder="Condensed sans headlines, small mono labels">
+        </label>
+        <label class="field">
+          <span>Layout</span>
+          <textarea name="layout" rows="2" placeholder="Asymmetric grid, oversized title top-left, image bleeds off the right edge"></textarea>
+        </label>
+        <label class="field">
+          <span>What makes it work</span>
+          <textarea name="details" rows="2" placeholder="Thin rules between sections, hover reveals captions, generous margins"></textarea>
+        </label>
+        <label class="field">
+          <span>Notes <em>optional</em></span>
+          <textarea name="notes" rows="2" placeholder="Anything you want to remember about it"></textarea>
+        </label>
+
+        <div class="detail-foot">
+          <button class="btn" type="button" data-close>Cancel</button>
+          <button class="btn btn-primary" type="submit" id="save-btn">Save</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
