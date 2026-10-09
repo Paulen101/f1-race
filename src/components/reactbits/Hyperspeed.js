@@ -1189,7 +1189,20 @@ const Hyperspeed = ({ effectOptions = DEFAULT_EFFECT_OPTIONS, lightMode = false 
 
     const myApp = new App(container, options);
     appRef.current = myApp;
-    myApp.loadAssets().then(myApp.init);
+    // StrictMode (and fast unmounts) can dispose the app before its assets load,
+    // and the GPU can drop the context at any time; initialising then would throw
+    // from this promise, where no error boundary can catch it. The effect is
+    // decorative, so give up quietly and leave the background empty.
+    myApp.loadAssets().then(() => {
+      if (myApp.disposed) return;
+      try {
+        if (myApp.renderer.getContext().isContextLost()) throw new Error('WebGL context lost');
+        myApp.init();
+      } catch (err) {
+        console.warn('Hyperspeed background disabled:', err);
+        myApp.dispose();
+      }
+    });
 
     const visibility = new IntersectionObserver(([entry]) => {
       myApp.paused = !entry.isIntersecting;
@@ -1199,9 +1212,8 @@ const Hyperspeed = ({ effectOptions = DEFAULT_EFFECT_OPTIONS, lightMode = false 
 
     return () => {
       visibility.disconnect();
-      if (appRef.current) {
-        appRef.current.dispose();
-      }
+      if (!myApp.disposed) myApp.dispose();
+      if (appRef.current === myApp) appRef.current = null;
     };
   }, [effectOptions, lightMode]);
 
