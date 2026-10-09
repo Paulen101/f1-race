@@ -269,14 +269,14 @@ function ModuleGrid() {
 
 function Calendar({ events, nextIndex }) {
   return (
-    <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+    <div className="stagger grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
       {events.map((race, idx) => {
         const done = nextIndex === -1 || idx < nextIndex;
         const isNext = idx === nextIndex;
         return (
           <div
             key={race.round}
-            className={`relative overflow-hidden rounded-xl border p-3 sm:p-4 transition ${
+            className={`relative overflow-hidden rounded-xl border p-3 sm:p-4 transition animate-pop-in ${
               isNext
                 ? 'border-f1-red/60 bg-f1-red/[0.08] shadow-[0_0_30px_-12px_rgba(225,6,0,0.8)]'
                 : done

@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   getAvailableDrivers, getHeadToHead, compareTeammates, compareDrivers, getSessionInfo, getSessionResults,
@@ -103,7 +104,7 @@ function HeadToHead({ year, drivers }) {
             <EmptyNote>These drivers didn't race each other this season.</EmptyNote>
           ) : (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+              <div className="stagger grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                 <StatTile label={`${result.driver1} ahead`} value={summary.driver1_wins} sub={`of ${result.races.length} races`} accent={summary.driver1_wins > summary.driver2_wins} />
                 <StatTile label={`${result.driver2} ahead`} value={summary.driver2_wins} sub={`of ${result.races.length} races`} accent={summary.driver2_wins > summary.driver1_wins} />
                 <StatTile
@@ -381,8 +382,16 @@ function SessionPace({ season }) {
   );
 }
 
+const tabIndex = (id) => TABS.findIndex((t) => t.id === id);
+
 function ComparisonsPage() {
-  const [tab, setTab] = useState('h2h');
+  const [tab, setTabState] = useState('h2h');
+  // Tab panels slide in from the side of the tab you came from
+  const direction = useRef(0);
+  const setTab = (next) => {
+    direction.current = tabIndex(next) > tabIndex(tab) ? 1 : -1;
+    setTabState(next);
+  };
   const season = useSeasonSelector();
   const { year, tracks } = season;
 
@@ -413,23 +422,31 @@ function ComparisonsPage() {
         icon={FiBarChart2}
         eyebrow="Head to head"
         title="Driver Comparisons"
+        effect="rise"
         description="Settle the arguments: season head-to-heads, teammate battles and raw pace in a single session."
       />
 
       <Tabs tabs={TABS} active={tab} onChange={setTab} id="comparisons" />
 
-      {tab !== 'session' && (
-        <Card>
-          <ErrorMessage message={season.error || driversError} />
-          <div className="grid gap-4 md:grid-cols-3">
-            <SeasonPicker season={season} showGrandPrix={false} />
-          </div>
-        </Card>
-      )}
+      <motion.div
+        key={tab}
+        initial={{ opacity: 0, x: direction.current * 32 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {tab !== 'session' && (
+          <Card>
+            <ErrorMessage message={season.error || driversError} />
+            <div className="grid gap-4 md:grid-cols-3">
+              <SeasonPicker season={season} showGrandPrix={false} />
+            </div>
+          </Card>
+        )}
 
-      {tab === 'h2h' && <HeadToHead year={year} drivers={drivers} />}
-      {tab === 'teammates' && <Teammates year={year} latestRace={latestRace} />}
-      {tab === 'session' && <SessionPace season={season} />}
+        {tab === 'h2h' && <HeadToHead year={year} drivers={drivers} />}
+        {tab === 'teammates' && <Teammates year={year} latestRace={latestRace} />}
+        {tab === 'session' && <SessionPace season={season} />}
+      </motion.div>
     </div>
   );
 }

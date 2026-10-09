@@ -32,5 +32,6 @@ class MockIntersectionObserver {
 }
 window.IntersectionObserver = window.IntersectionObserver || MockIntersectionObserver;
 window.scrollTo = () => {};
+Element.prototype.scrollIntoView = Element.prototype.scrollIntoView || (() => {});
 // ShinyText falls back gracefully without a 2D context; skip jsdom's "not implemented" error
 HTMLCanvasElement.prototype.getContext = () => null;

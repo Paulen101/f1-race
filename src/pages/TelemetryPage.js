@@ -164,6 +164,7 @@ function TelemetryPage() {
         icon={FiActivity}
         eyebrow="Telemetry"
         title="Telemetry Comparison"
+        effect="blur"
         description="Overlay two drivers' fastest laps: speed, throttle and braking through every metre of the lap."
       />
 
@@ -231,7 +232,7 @@ function TelemetryPage() {
       )}
 
       {delta && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-6 animate-fade-up">
+        <div className="stagger grid grid-cols-2 gap-3 md:grid-cols-4 mb-6">
           <StatTile label="Max speed difference" value={fixed(delta.speed?.max_diff)} unit="km/h" accent />
           <StatTile label="Avg speed difference" value={fixed(delta.speed?.avg_diff)} unit="km/h" />
           <StatTile label="Throttle usage diff" value={fixed(delta.throttle?.diff)} unit="%" />

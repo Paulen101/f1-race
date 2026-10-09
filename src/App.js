@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, NavLink, useLocation } from 'react-router-dom';
 import { motion, MotionConfig } from 'motion/react';
 import { FiActivity, FiBarChart2, FiClock, FiCpu, FiLayers, FiMap, FiUsers } from 'react-icons/fi';
@@ -90,12 +90,22 @@ function Footer() {
   );
 }
 
-/** Each route starts at the top and fades in. */
+const navIndex = (pathname) => NAV_LINKS.findIndex((link) => link.to === pathname);
+
+/**
+ * Each route starts at the top and slides in from the side of the nav it
+ * came from: moving right along the nav enters from the right, and back.
+ */
 function AnimatedRoutes() {
   const location = useLocation();
+  const previous = useRef(location.pathname);
+  const index = navIndex(location.pathname);
+  const fromIndex = navIndex(previous.current);
+  const direction = previous.current === location.pathname ? 0 : index > fromIndex ? 1 : -1;
 
   useEffect(() => {
     window.scrollTo(0, 0);
+    previous.current = location.pathname;
   }, [location.pathname]);
 
   const page = (element) => <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 md:py-12">{element}</div>;
@@ -103,9 +113,9 @@ function AnimatedRoutes() {
   return (
     <motion.div
       key={location.pathname}
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: 'easeOut' }}
+      initial={{ opacity: 0, x: direction * 40, y: direction === 0 ? 12 : 0 }}
+      animate={{ opacity: 1, x: 0, y: 0 }}
+      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
     >
       <Routes location={location}>
         <Route path="/" element={<Home />} />
@@ -127,7 +137,8 @@ function App() {
       <Router>
         <div className="flex min-h-screen flex-col text-white">
           <NavBar />
-          <main className="flex-1">
+          {/* clip, not hidden: page slides must not add a scrollbar or break sticky headers */}
+          <main className="flex-1 overflow-x-clip">
             <AnimatedRoutes />
           </main>
           <Footer />

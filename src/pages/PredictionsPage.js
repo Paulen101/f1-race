@@ -219,6 +219,7 @@ function PredictionsPage() {
         icon={FiCpu}
         eyebrow="Machine learning"
         title="AI Race Predictions"
+        effect="gradient"
         description="Predictions built from the last two seasons of results, qualifying pace and track-specific form."
       />
 

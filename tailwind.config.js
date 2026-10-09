@@ -31,7 +31,12 @@ module.exports = {
         'star-movement-bottom': 'star-movement-bottom linear infinite alternate',
         'star-movement-top': 'star-movement-top linear infinite alternate',
         'fade-up': 'fade-up 0.5s ease-out both',
+        'blur-in': 'blur-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both',
+        'pop-in': 'pop-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both',
+        'slide-in': 'slide-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both',
       },
+      // Only the start state is defined: each element animates back to its own
+      // styles, so things like a dimmed calendar card keep their opacity.
       keyframes: {
         'star-movement-bottom': {
           '0%': { transform: 'translate(0%, 0%)', opacity: '1' },
@@ -43,7 +48,18 @@ module.exports = {
         },
         'fade-up': {
           '0%': { opacity: '0', transform: 'translateY(8px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        // Results resolve out of a blur, like a signal coming in
+        'blur-in': {
+          '0%': { opacity: '0', filter: 'blur(12px)', transform: 'translateY(16px) scale(0.98)' },
+        },
+        // Numbers pop in with a slight overshoot
+        'pop-in': {
+          '0%': { opacity: '0', transform: 'scale(0.9)' },
+        },
+        // Table rows slide in from the left, like a timing tower filling up
+        'slide-in': {
+          '0%': { opacity: '0', transform: 'translateX(-12px)' },
         },
       },
     },

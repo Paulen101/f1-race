@@ -50,6 +50,15 @@
   .tabular {
     @apply font-mono tabular-nums;
   }
+
+  /* Children animate one after another */
+  .stagger > *:nth-child(2) { animation-delay: 60ms; }
+  .stagger > *:nth-child(3) { animation-delay: 120ms; }
+  .stagger > *:nth-child(4) { animation-delay: 180ms; }
+  .stagger > *:nth-child(5) { animation-delay: 240ms; }
+  .stagger > *:nth-child(6) { animation-delay: 300ms; }
+  .stagger > *:nth-child(7) { animation-delay: 360ms; }
+  .stagger > *:nth-child(n + 8) { animation-delay: 420ms; }
 }
 
 /* Start-light gantry loader: lights come on one by one, then all go out */

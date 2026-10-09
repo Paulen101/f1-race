@@ -205,6 +205,7 @@ function LapTimesPage() {
         icon={FiClock}
         eyebrow="Timing"
         title="Lap Time Analysis"
+        effect="decrypt"
         description="Every timed lap with sectors and tyres. Purple marks the session best, green each driver's personal best."
       />
 
@@ -244,7 +245,7 @@ function LapTimesPage() {
 
       {result && laps.length > 0 && (
         <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-6 animate-fade-up">
+          <div className="stagger grid grid-cols-2 gap-3 md:grid-cols-4 mb-6">
             <StatTile label="Timed laps" value={laps.length} sub={`${result.grandPrix} ${result.year}`} />
             <StatTile label="Fastest lap" value={formatLapTime(records.lap)} sub={fastestLap && `${fastestLap.driver} · lap ${fastestLap.lap_number}`} accent />
             <StatTile label="Median lap" value={formatLapTime(median(laps.map((l) => l.lap_time)))} sub={result.sessionName} />
